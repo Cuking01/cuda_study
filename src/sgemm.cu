@@ -64,20 +64,23 @@ __global__ static void sgemm_v2_impl(float* a, float* b, float* c, int n, int m,
 
 	const int k32=k*32;
 
+	as[ty][tx]=a_local[ty*m+tx];
+	bs[ty][tx]=b_local[ty*k+tx];
+
 	for(int i=0;i<m;i+=32)
 	{
-		as[ty][tx]=a_local[ty*m+tx];
-		bs[ty][tx]=b_local[ty*k+tx];
+		// as[ty][tx]=a_local[ty*m+tx];
+		// bs[ty][tx]=b_local[ty*k+tx];
 
-		a_local+=32;
-		b_local+=k32;
-		__syncthreads();
+		// a_local+=32;
+		// b_local+=k32;
+		// __syncthreads();
 
 		#pragma unroll 2
 		for(int j=0;j<32;j++)
 		{
 			tmp+=as[ty][j]*bs[j][tx];
-			__syncthreads();
+			//__syncthreads();
 		}
 			
 
@@ -87,7 +90,7 @@ __global__ static void sgemm_v2_impl(float* a, float* b, float* c, int n, int m,
 		// for(int j=16;j<32;j++)
 		// 	tmp+=as[ty][j]*bs[j][tx];
 		
-		__syncthreads();
+		//__syncthreads();
 	}
 
 	c[(blockIdx.y*32+ty)*k+blockIdx.x*32+tx]=tmp;
