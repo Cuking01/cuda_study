@@ -31,7 +31,7 @@ target_link_libraries(cu_expriment PRIVATE cu_operator)
 
 add_executable(test_sgemm test/sgemm.cpp)
 target_compile_options(test_sgemm PRIVATE -O2)
-target_link_libraries(test_sgemm cu_operator)
+target_link_libraries(test_sgemm cu_operator cublas)
 
 set_target_properties(test_sgemm PROPERTIES
     CXX_STANDARD 20
