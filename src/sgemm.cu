@@ -177,8 +177,8 @@ struct Block_4x32x32_4x4
 
 __global__ static void sgemm_v3_impl(float* a, float* b, float* c, int N, int M, int K)
 {
-	const int tx=threadIdx.x;
-	const int ty=threadIdx.y;
+	const unsigned int tx=threadIdx.x;
+	const unsigned int ty=threadIdx.y;
 	
 	__shared__ Block_4x32x32_4x4 as;
 	__shared__ Block_4x32x32_4x4 bs;
@@ -253,6 +253,166 @@ __global__ static void sgemm_v3_impl(float* a, float* b, float* c, int N, int M,
 		tx[(float4*)(c+(blockIdx.y*128+ty*4+j)*K+blockIdx.x*128)]=c_4x4[j];
 }
 
+struct Block_4x32x32_8x8
+{
+	struct alignas(16) Block_32x32_8x8
+	{
+
+		float4 x[32][8];
+
+		using T=float4(*)[8];
+		__device__ operator T(){return x;}
+	};
+
+	Block_32x32_8x8 x[4];
+
+	__device__ operator Block_32x32_8x8*()
+	{
+		return x;
+	}
+};
+
+__global__ static void sgemm_v4_impl(float* a, float* b, float* c, int N, int M, int K)
+{
+	const unsigned int tx=threadIdx.x;
+	const unsigned int ty=threadIdx.y;
+	
+	__shared__ Block_4x32x32_8x8 as;
+	__shared__ Block_4x32x32_8x8 bs;
+	
+	float4 a_8x8[8][2];
+	float4 b_8x8[8][2];
+	float4 c_8x8[8][2];
+
+	//把c初始化为0
+	#pragma unroll 4
+	for(int j=0;j<8;j++)
+		c_8x8[j][0]=c_8x8[j][1]=make_float4(0,0,0,0);
+
+	const float *a_local=a+blockIdx.y*128*M;
+	const float *b_local=b+blockIdx.x*128;
+
+	const unsigned int k128=K*128;
+
+	for(int i=0;i<M;i+=128)
+	{
+		#pragma unroll 1
+		for(int bstep_id=0;bstep_id<4;bstep_id++)
+		{
+			for(int j=0;j<4;j++)
+			{
+				as[ty/4][ty%4*8+tx/8*4+j][tx%8]=(tx%8)[(float4*)(a_local+bstep_id*32+(ty*8+tx/8*4+j)*M)];
+				bs[ty/4][ty%4*8+tx/8*4+j][tx%8]=(tx%8)[(float4*)(b_local+(bstep_id*32+ty%4*8+tx/8*4+j)*K+ty/4*32)];
+			}
+
+			
+
+			__syncthreads();
+
+			#pragma unroll 1
+			for(int l=0;l<4;l++)
+			{	
+				for(int j=0;j<8;j++)
+				{
+					a_8x8[j][0]=as[ty/4][ty%4*8+j][l*2+0];
+					a_8x8[j][1]=as[ty/4][ty%4*8+j][l*2+1];
+					b_8x8[j][0]=bs[tx/4][l*8+j][tx%4*2+0];
+					b_8x8[j][1]=bs[tx/4][l*8+j][tx%4*2+1];
+				}
+
+				for(int j=0;j<8;j++)
+				{
+					c_8x8[j][0].x+=a_8x8[j][0].x*b_8x8[0][0].x;
+					c_8x8[j][0].y+=a_8x8[j][0].x*b_8x8[0][0].y;
+					c_8x8[j][0].z+=a_8x8[j][0].x*b_8x8[0][0].z;
+					c_8x8[j][0].w+=a_8x8[j][0].x*b_8x8[0][0].w;
+					c_8x8[j][1].x+=a_8x8[j][0].x*b_8x8[0][1].x;
+					c_8x8[j][1].y+=a_8x8[j][0].x*b_8x8[0][1].y;
+					c_8x8[j][1].z+=a_8x8[j][0].x*b_8x8[0][1].z;
+					c_8x8[j][1].w+=a_8x8[j][0].x*b_8x8[0][1].w;
+
+					c_8x8[j][0].x+=a_8x8[j][0].y*b_8x8[1][0].x;
+					c_8x8[j][0].y+=a_8x8[j][0].y*b_8x8[1][0].y;
+					c_8x8[j][0].z+=a_8x8[j][0].y*b_8x8[1][0].z;
+					c_8x8[j][0].w+=a_8x8[j][0].y*b_8x8[1][0].w;
+					c_8x8[j][1].x+=a_8x8[j][0].y*b_8x8[1][1].x;
+					c_8x8[j][1].y+=a_8x8[j][0].y*b_8x8[1][1].y;
+					c_8x8[j][1].z+=a_8x8[j][0].y*b_8x8[1][1].z;
+					c_8x8[j][1].w+=a_8x8[j][0].y*b_8x8[1][1].w;
+
+					c_8x8[j][0].x+=a_8x8[j][0].z*b_8x8[2][0].x;
+					c_8x8[j][0].y+=a_8x8[j][0].z*b_8x8[2][0].y;
+					c_8x8[j][0].z+=a_8x8[j][0].z*b_8x8[2][0].z;
+					c_8x8[j][0].w+=a_8x8[j][0].z*b_8x8[2][0].w;
+					c_8x8[j][1].x+=a_8x8[j][0].z*b_8x8[2][1].x;
+					c_8x8[j][1].y+=a_8x8[j][0].z*b_8x8[2][1].y;
+					c_8x8[j][1].z+=a_8x8[j][0].z*b_8x8[2][1].z;
+					c_8x8[j][1].w+=a_8x8[j][0].z*b_8x8[2][1].w;
+
+					c_8x8[j][0].x+=a_8x8[j][0].w*b_8x8[3][0].x;
+					c_8x8[j][0].y+=a_8x8[j][0].w*b_8x8[3][0].y;
+					c_8x8[j][0].z+=a_8x8[j][0].w*b_8x8[3][0].z;
+					c_8x8[j][0].w+=a_8x8[j][0].w*b_8x8[3][0].w;
+					c_8x8[j][1].x+=a_8x8[j][0].w*b_8x8[3][1].x;
+					c_8x8[j][1].y+=a_8x8[j][0].w*b_8x8[3][1].y;
+					c_8x8[j][1].z+=a_8x8[j][0].w*b_8x8[3][1].z;
+					c_8x8[j][1].w+=a_8x8[j][0].w*b_8x8[3][1].w;
+
+					c_8x8[j][0].x+=a_8x8[j][1].x*b_8x8[4][0].x;
+					c_8x8[j][0].y+=a_8x8[j][1].x*b_8x8[4][0].y;
+					c_8x8[j][0].z+=a_8x8[j][1].x*b_8x8[4][0].z;
+					c_8x8[j][0].w+=a_8x8[j][1].x*b_8x8[4][0].w;
+					c_8x8[j][1].x+=a_8x8[j][1].x*b_8x8[4][1].x;
+					c_8x8[j][1].y+=a_8x8[j][1].x*b_8x8[4][1].y;
+					c_8x8[j][1].z+=a_8x8[j][1].x*b_8x8[4][1].z;
+					c_8x8[j][1].w+=a_8x8[j][1].x*b_8x8[4][1].w;
+
+					c_8x8[j][0].x+=a_8x8[j][1].y*b_8x8[5][0].x;
+					c_8x8[j][0].y+=a_8x8[j][1].y*b_8x8[5][0].y;
+					c_8x8[j][0].z+=a_8x8[j][1].y*b_8x8[5][0].z;
+					c_8x8[j][0].w+=a_8x8[j][1].y*b_8x8[5][0].w;
+					c_8x8[j][1].x+=a_8x8[j][1].y*b_8x8[5][1].x;
+					c_8x8[j][1].y+=a_8x8[j][1].y*b_8x8[5][1].y;
+					c_8x8[j][1].z+=a_8x8[j][1].y*b_8x8[5][1].z;
+					c_8x8[j][1].w+=a_8x8[j][1].y*b_8x8[5][1].w;
+
+					c_8x8[j][0].x+=a_8x8[j][1].z*b_8x8[6][0].x;
+					c_8x8[j][0].y+=a_8x8[j][1].z*b_8x8[6][0].y;
+					c_8x8[j][0].z+=a_8x8[j][1].z*b_8x8[6][0].z;
+					c_8x8[j][0].w+=a_8x8[j][1].z*b_8x8[6][0].w;
+					c_8x8[j][1].x+=a_8x8[j][1].z*b_8x8[6][1].x;
+					c_8x8[j][1].y+=a_8x8[j][1].z*b_8x8[6][1].y;
+					c_8x8[j][1].z+=a_8x8[j][1].z*b_8x8[6][1].z;
+					c_8x8[j][1].w+=a_8x8[j][1].z*b_8x8[6][1].w;
+
+					c_8x8[j][0].x+=a_8x8[j][1].w*b_8x8[7][0].x;
+					c_8x8[j][0].y+=a_8x8[j][1].w*b_8x8[7][0].y;
+					c_8x8[j][0].z+=a_8x8[j][1].w*b_8x8[7][0].z;
+					c_8x8[j][0].w+=a_8x8[j][1].w*b_8x8[7][0].w;
+					c_8x8[j][1].x+=a_8x8[j][1].w*b_8x8[7][1].x;
+					c_8x8[j][1].y+=a_8x8[j][1].w*b_8x8[7][1].y;
+					c_8x8[j][1].z+=a_8x8[j][1].w*b_8x8[7][1].z;
+					c_8x8[j][1].w+=a_8x8[j][1].w*b_8x8[7][1].w;
+				}
+			}
+
+			__syncthreads();
+		}
+		
+		a_local+=128;  
+		b_local+=k128;
+
+	}
+
+	#pragma unroll 4
+	for(int j=0;j<8;j++)
+	{
+		(tx*2+0)[(float4*)(c+(blockIdx.y*128+ty*8+j)*K+blockIdx.x*128)]=c_8x8[j][0];
+		(tx*2+1)[(float4*)(c+(blockIdx.y*128+ty*8+j)*K+blockIdx.x*128)]=c_8x8[j][1];
+	}
+		
+}
+
 template<auto sgemm_impl,int block_size=32>
 void sgemm_interface(const float* a, const float* b, float* c, int n, int m, int k)
 {
@@ -310,6 +470,20 @@ void sgemm_v3(const float* a, const float* b, float* c, int n, int m, int k)
 	dim3 grid(k/128,n/128);
 	dim3 block(32,32);
 	sgemm_v3_impl<<<grid,block>>>(gpu_a,gpu_b,gpu_c,n,m,k);
+	
+	gpu_c.to_host(c);
+	gpu_sync();
+}
+
+void sgemm_v4(const float* a, const float* b, float* c, int n, int m, int k)
+{
+	assert_throw(m%128==0&&n%128==0&&k%128==0,"m,n,k must be divisible by 128");
+	
+	GPU_Data<float> gpu_a(a,n*m), gpu_b(b,m*k), gpu_c(n*k);
+
+	dim3 grid(k/128,n/128);
+	dim3 block(16,16);
+	sgemm_v4_impl<<<grid,block>>>(gpu_a,gpu_b,gpu_c,n,m,k);
 	
 	gpu_c.to_host(c);
 	gpu_sync();
