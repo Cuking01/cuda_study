@@ -18,6 +18,22 @@ void hello_sgemm()
 	cudaDeviceSynchronize();
 }
 
+__global__ static void nop_impl(int n,int*p)
+{
+	int x=0;
+	for(int i=0;i<n;i++)
+		x=p[x];
+	p[0]=x;
+}
+
+void nop(cudaStream_t stream)
+{
+	std::vector<int> p{1,0};
+	GPU_Data<int> p_gpu(p);
+
+	nop_impl<<<1,1,0,stream>>>(100000,p_gpu);
+}
+
 __global__ static void sgemm_v1_impl(const float* a, const float* b, float* c, int n, int m, int k)
 {
 	const int tx=threadIdx.x;

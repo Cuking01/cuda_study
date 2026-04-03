@@ -78,19 +78,17 @@ void test_speed(sgemm_func sgemm,std::string name,int n,int m,int k,int times=1)
 
 	GPU_Data<float> a_gpu(a), b_gpu(b), c_gpu(c);
 
-	//创建cuda stream
 	Stream stream;
 	Event start,end;
 
 	float time=0;
 	for(int i=0;i<times;i++)
 	{
-		stream->record(start)->run_any(sgemm,a_gpu,b_gpu,c_gpu,n,m,k)->record(end)->synchronize();
+		stream->run_any(nop)->record(start)->run_any(sgemm,a_gpu,b_gpu,c_gpu,n,m,k)->record(end)->synchronize();
 		time+=event_duration(start,end);
 	}
 
 	printf("%s avg time: %f ms\n%f Tflops\n\n",name.c_str(),time/times,2.0*n*m*k*times/(time)/1e9);
-	
 }
 
 
