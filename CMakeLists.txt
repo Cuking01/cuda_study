@@ -29,7 +29,7 @@ target_compile_options(cu_expriment PRIVATE -O3 --keep -src-in-ptx)
 target_include_directories(cu_expriment PUBLIC src/expr)
 target_link_libraries(cu_expriment PRIVATE cu_operator)
 
-add_executable(test_sgemm test/sgemm.cpp)
+add_executable(test_sgemm test/sgemm.cu)
 target_compile_options(test_sgemm PRIVATE -O2)
 target_link_libraries(test_sgemm cu_operator cublas)
 

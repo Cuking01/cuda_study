@@ -6,7 +6,7 @@
 
 
 
-void* gpu_malloc(size_t size){
+inline void* gpu_malloc(size_t size){
     void* data;
     cudaError_t err = cudaMalloc(&data,size);
     if(err!=cudaSuccess)
@@ -14,13 +14,13 @@ void* gpu_malloc(size_t size){
     return data;
 }
 
-void gpu_free(void* data){
+inline void gpu_free(void* data){
     cudaError_t err = cudaFree(data);
     if(err!=cudaSuccess)
         throw std::runtime_error(cudaGetErrorString(err));
 }
 
-void gpu_memcpy(void* dst, const void* src, size_t size, cudaMemcpyKind kind){
+inline void gpu_memcpy(void* dst, const void* src, size_t size, cudaMemcpyKind kind){
     cudaError_t err = cudaMemcpy(dst,src,size,kind);
     if(err!=cudaSuccess)
         throw std::runtime_error(cudaGetErrorString(err));
@@ -38,7 +38,7 @@ struct GPU_Data
         gpu_memcpy(data,host_data,size*sizeof(T),cudaMemcpyHostToDevice);
     }
 
-    GPU_Data(const std::vector<T>& host_data, size_t size) :size(size) 
+    GPU_Data(const std::vector<T>& host_data) :size(host_data.size()) 
     {
         data = (T*)gpu_malloc(size*sizeof(T));
         gpu_memcpy(data,host_data.data(),size*sizeof(T),cudaMemcpyHostToDevice);

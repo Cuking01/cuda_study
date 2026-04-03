@@ -25,7 +25,7 @@ struct Event
     }
 };
 
-float event_duration(const Event& event_start,const Event& event_end)
+inline float event_duration(const Event& event_start,const Event& event_end)
 {
     float ms;
     cudaEventElapsedTime(&ms,event_start,event_end);
@@ -61,9 +61,16 @@ struct Stream
     }
 
     template<typename Kernal_Func,typename... Args>
-    Stream* run(Kernal_Func func,dim3 grid,dim3 block,Args&&... args)
+    Stream* run(Kernal_Func&&func,dim3 grid,dim3 block,Args&&... args)
     {
         func<<<grid,block,0,stream>>>(std::forward<Args>(args)...);
+        return this;
+    }
+
+    template<typename Func,typename... Args>
+    Stream* run_any(Func&&func,Args&&... args)
+    {
+        func(stream,std::forward<Args>(args)...);
         return this;
     }
 

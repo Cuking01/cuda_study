@@ -4,7 +4,6 @@
 #include<cuda_runtime.h>
 #include<cublas_v2.h>
 #include<cuda_runtime_api.h>
-#include<cuda_runtime.h>
 
 #include"tool.h"
 
@@ -449,8 +448,14 @@ void sgemm_v4(cudaStream_t stream,const float* a, const float* b, float* c, int 
 
 }
 
-void sgemm_cublas(cudaStream_t stream,cublasHandle_t handle,const float* a, const float* b, float* c, int N, int M, int K)
+void sgemm_cublas(cudaStream_t stream,const float* a, const float* b, float* c, int N, int M, int K)
 {
+	static cublasHandle_t handle=[&](){
+		cublasHandle_t handle;
+		cublasCreate(&handle);
+		return handle;
+	}();
+	cublasSetStream(handle,stream);
 	float alpha=1.0f;
 	float beta=0.0f;
 	cublasSgemm(handle,CUBLAS_OP_N,CUBLAS_OP_N,N,M,K,&alpha,b,N,a,K,&beta,c,N);

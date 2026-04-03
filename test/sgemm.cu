@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <time.h>
 #include <format>
+#include "tool.h"
 #include "sgemm.h"
 
 void random_init(std::vector<float>& data, int seed)
@@ -40,19 +41,23 @@ bool check_equal(float a,float b)
 	return fabs(a-b)<1e-6||fabs(a-b)/(std::max(fabs(a),fabs(b)))<1e-4;
 }
 
-typedef void (*sgemm_func)(const float* a, const float* b, float* c, int n, int m, int k);
+typedef void (*sgemm_func)(cudaStream_t stream,const float* a, const float* b, float* c, int n, int m, int k);
 
 void test_correctness(sgemm_func sgemm,std::string name,int n,int m,int k)
 {
 	std::vector<float> a(n*m), b(m*k), c(n*k), c_ref(n*k);
 	random_init(a,1);
 	random_init(b,2);
+	GPU_Data<float> a_gpu(a), b_gpu(b), c_gpu(c);
 	
 	printf("test correctness %s, n=%d, m=%d, k=%d\n",name.c_str(),n,m,k);
 
-	sgemm(a.data(),b.data(),c.data(),n,m,k);
+	Stream stream;
+	stream->run_any(sgemm,a_gpu,b_gpu,c_gpu,n,m,k);
 	sgemm_ref(a.data(),b.data(),c_ref.data(),n,m,k);
-	
+	stream->synchronize();
+	c_gpu.to_host(c.data());
+
 	for(int i=0;i<n*k;i++)
 		if(!check_equal(c[i],c_ref[i]))
 		{
@@ -67,15 +72,24 @@ void test_speed(sgemm_func sgemm,std::string name,int n,int m,int k,int times=1)
 {
 	printf("test %s, n=%d, m=%d, k=%d, %d times\n",name.c_str(),n,m,k,times);
 	
-	std::vector<float> a(n*m), b(m*k), c(n*k), c_ref(n*k);
+	std::vector<float> a(n*m), b(m*k), c(n*k);
 	random_init(a,1);
 	random_init(b,2);
 
-	int st=clock();
+	GPU_Data<float> a_gpu(a), b_gpu(b), c_gpu(c);
+
+	//创建cuda stream
+	Stream stream;
+	Event start,end;
+
+	float time=0;
 	for(int i=0;i<times;i++)
-		sgemm(a.data(),b.data(),c.data(),n,m,k);
-	int ed=clock();
-	printf("%s avg time: %d us\n%f Tflops\n\n",name.c_str(),(ed-st)/times,2.0*n*m*k*times/(ed-st)/1e6);
+	{
+		stream->record(start)->run_any(sgemm,a_gpu,b_gpu,c_gpu,n,m,k)->record(end)->synchronize();
+		time+=event_duration(start,end);
+	}
+
+	printf("%s avg time: %f ms\n%f Tflops\n\n",name.c_str(),time/times,2.0*n*m*k*times/(time)/1e9);
 	
 }
 
@@ -85,9 +99,7 @@ int main()
 {
 	//先打印一下顺便预热
 	hello_sgemm();
-	test_stream(128,256,512);
 
-	
 	test_correctness(sgemm_v1,"sgemm_v1",128,256,512);
 	test_correctness(sgemm_v2,"sgemm_v2",128,256,512);
 	//test_correctness(sgemm_v3,"sgemm_v3",128,128,128);
@@ -105,8 +117,6 @@ int main()
 	test_speed(sgemm_v2,"sgemm_v2",16384,16384,16384,1);
 	test_speed(sgemm_v4,"sgemm_v4",16384,16384,16384,1);
 	test_speed(sgemm_cublas,"sgemm_cublas",16384,16384,16384,1);
-
-	test_stream(16384,16384,16384);
 
 	test_speed(sgemm_cublas,"sgemm_cublas",8192,8192,8192,10);
 }

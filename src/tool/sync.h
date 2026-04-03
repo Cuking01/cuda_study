@@ -4,7 +4,7 @@
 #include <stdexcept>
 #include "error.h"
 
-void gpu_sync()
+inline void gpu_sync()
 {
     cudaDeviceSynchronize();
     process_error();
