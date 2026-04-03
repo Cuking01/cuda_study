@@ -6,7 +6,7 @@
 #include<cuda_runtime_api.h>
 #include<cuda_runtime.h>
 
-#include "tool.h"
+#include"tool.h"
 
 __global__ static void hello_sgemm_impl()
 {
@@ -19,7 +19,7 @@ void hello_sgemm()
 	cudaDeviceSynchronize();
 }
 
-__global__ static void sgemm_v1_impl(float* a, float* b, float* c, int n, int m, int k)
+__global__ static void sgemm_v1_impl(const float* a, const float* b, float* c, int n, int m, int k)
 {
 	const int tx=threadIdx.x;
 	const int ty=threadIdx.y;
@@ -75,7 +75,7 @@ struct Block_32x32_4x4
 	}
 };
 
-__global__ static void sgemm_v2_impl(float* a, float* b, float* c, int n, int m, int k)
+__global__ static void sgemm_v2_impl(const float* a, const float* b, float* c, int n, int m, int k)
 {
 	const int tx=threadIdx.x;
 	const int ty=threadIdx.y;
@@ -175,7 +175,7 @@ struct Block_4x32x32_4x4
 	}
 };
 
-__global__ static void sgemm_v3_impl(float* a, float* b, float* c, int N, int M, int K)
+__global__ static void sgemm_v3_impl(const float* a, const float* b, float* c, int N, int M, int K)
 {
 	const unsigned int tx=threadIdx.x;
 	const unsigned int ty=threadIdx.y;
@@ -272,7 +272,7 @@ struct Block_4x32x32_8x8
 	}
 };
 
-__global__ static void sgemm_v4_impl(float* a, float* b, float* c, int N, int M, int K)
+__global__ static void sgemm_v4_impl(const float* a,const float* b, float* c, int N, int M, int K)
 {
 	const unsigned int tx=threadIdx.x;
 	const unsigned int ty=threadIdx.y;
@@ -413,93 +413,45 @@ __global__ static void sgemm_v4_impl(float* a, float* b, float* c, int N, int M,
 		
 }
 
-template<auto sgemm_impl,int block_size=32>
-void sgemm_interface(const float* a, const float* b, float* c, int n, int m, int k)
+void sgemm_v1(cudaStream_t stream,const float* a, const float* b, float* c, int n, int m, int k)
 {
-	assert_throw(m%block_size==0&&n%block_size==0&&k%block_size==0,"m,n,k must be divisible by block_size");
-	
-	GPU_Data<float> gpu_a(a,n*m), gpu_b(b,m*k), gpu_c(n*k);
-
-	dim3 grid(k/block_size,n/block_size);
-	dim3 block(block_size,block_size);
-	sgemm_impl<<<grid,block>>>(gpu_a,gpu_b,gpu_c,n,m,k);
-	
-	gpu_c.to_host(c);
-	gpu_sync();
+	assert_throw(m%32==0&&n%32==0&&k%32==0,"m,n,k must be divisible by 32");
+	dim3 grid(k/32,n/32);
+	dim3 block(32,32);
+	sgemm_v1_impl<<<grid,block,0,stream>>>(a,b,c,n,m,k);
 }
 
-void sgemm_v1(const float* a, const float* b, float* c, int n, int m, int k)
-{
-	sgemm_interface<sgemm_v1_impl>(a,b,c,n,m,k);
-}
-
-// void sgemm_v2(const float* a, const float* b, float* c, int n, int m, int k)
-// {
-// 	assert_throw(m%32==0&&n%32==0&&k%32==0,"m,n,k must be divisible by 32");
-	
-// 	GPU_Data<float> gpu_a(a,n*m), gpu_b(b,m*k), gpu_c(n*k);
-
-// 	dim3 grid(k/32,n/32);
-// 	dim3 block(8,8);
-// 	sgemm_v2_impl<<<grid,block>>>(gpu_a,gpu_b,gpu_c,n,m,k);
-	
-// 	gpu_c.to_host(c);
-// 	gpu_sync();
-// }
-
-void sgemm_v2(const float* a, const float* b, float* c, int n, int m, int k)
+void sgemm_v2(cudaStream_t stream,const float* a, const float* b, float* c, int n, int m, int k)
 {
 	assert_throw(m%32==0&&n%32==0&&k%32==0,"m,n,k must be divisible by 32");
 	
-	GPU_Data<float> gpu_a(a,n*m), gpu_b(b,m*k), gpu_c(n*k);
-
 	dim3 grid(k/32,n/32);
 	dim3 block(8,8);
-	sgemm_v2_impl<<<grid,block>>>(gpu_a,gpu_b,gpu_c,n,m,k);
-	
-	gpu_c.to_host(c);
-	gpu_sync();
+	sgemm_v2_impl<<<grid,block,0,stream>>>(a,b,c,n,m,k);
 }
 
-void sgemm_v3(const float* a, const float* b, float* c, int n, int m, int k)
+void sgemm_v3(cudaStream_t stream,const float* a, const float* b, float* c, int n, int m, int k)
 {
 	assert_throw(m%128==0&&n%128==0&&k%128==0,"m,n,k must be divisible by 128");
-	
-	GPU_Data<float> gpu_a(a,n*m), gpu_b(b,m*k), gpu_c(n*k);
 
 	dim3 grid(k/128,n/128);
 	dim3 block(32,32);
-	sgemm_v3_impl<<<grid,block>>>(gpu_a,gpu_b,gpu_c,n,m,k);
-	
-	gpu_c.to_host(c);
-	gpu_sync();
+	sgemm_v3_impl<<<grid,block,0,stream>>>(a,b,c,n,m,k);
 }
 
-void sgemm_v4(const float* a, const float* b, float* c, int n, int m, int k)
+void sgemm_v4(cudaStream_t stream,const float* a, const float* b, float* c, int n, int m, int k)
 {
 	assert_throw(m%128==0&&n%128==0&&k%128==0,"m,n,k must be divisible by 128");
-	
-	GPU_Data<float> gpu_a(a,n*m), gpu_b(b,m*k), gpu_c(n*k);
 
 	dim3 grid(k/128,n/128);
 	dim3 block(16,16);
-	sgemm_v4_impl<<<grid,block>>>(gpu_a,gpu_b,gpu_c,n,m,k);
-	
-	gpu_c.to_host(c);
-	gpu_sync();
+	sgemm_v4_impl<<<grid,block,0,stream>>>(a,b,c,n,m,k);
+
 }
 
-void sgemm_cublas(const float* a, const float* b, float* c, int N, int M, int K)
+void sgemm_cublas(cudaStream_t stream,cublasHandle_t handle,const float* a, const float* b, float* c, int N, int M, int K)
 {
-	cublasHandle_t handle;
-	cublasCreate(&handle);
-	cudaStream_t stream;
-	cudaStreamCreate(&stream);
-	cublasSetStream(handle,stream);
 	float alpha=1.0f;
 	float beta=0.0f;
 	cublasSgemm(handle,CUBLAS_OP_N,CUBLAS_OP_N,N,M,K,&alpha,b,N,a,K,&beta,c,N);
-	cudaStreamSynchronize(stream);
-	cublasDestroy(handle);
-	cudaStreamDestroy(stream);
 }

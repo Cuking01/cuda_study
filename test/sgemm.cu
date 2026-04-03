@@ -85,7 +85,9 @@ int main()
 {
 	//先打印一下顺便预热
 	hello_sgemm();
+	test_stream(128,256,512);
 
+	
 	test_correctness(sgemm_v1,"sgemm_v1",128,256,512);
 	test_correctness(sgemm_v2,"sgemm_v2",128,256,512);
 	//test_correctness(sgemm_v3,"sgemm_v3",128,128,128);
@@ -104,7 +106,7 @@ int main()
 	test_speed(sgemm_v4,"sgemm_v4",16384,16384,16384,1);
 	test_speed(sgemm_cublas,"sgemm_cublas",16384,16384,16384,1);
 
-
+	test_stream(16384,16384,16384);
 
 	test_speed(sgemm_cublas,"sgemm_cublas",8192,8192,8192,10);
 }
