@@ -4,6 +4,8 @@
 #include<cuda_runtime.h>
 #include<cublas_v2.h>
 #include<cuda_runtime_api.h>
+#include<cooperative_groups.h>
+#include<cuda/pipeline>
 
 #include"tool.h"
 
@@ -428,6 +430,154 @@ __global__ static void sgemm_v4_impl(const float* a,const float* b, float* c, in
 		
 }
 
+namespace sgemm_v5_impl
+{
+
+using u2=uint32_t;
+
+__device__ __forceinline__ static void LS(
+	cuda::pipeline<cuda::thread_scope_block>&pipe,
+	const float* A_global,float* A_shared,u2 M,u2 M2,u2 M3,
+	const float* B_global,float* B_shared,u2 K,u2 K2,u2 K3
+)
+{
+	pipe.producer_acquire();
+	cuda::memcpy_async(A_shared+0,A_global+0,16,pipe);
+	cuda::memcpy_async(A_shared+32,A_global+M,16,pipe);
+	cuda::memcpy_async(A_shared+64,A_global+M2,16,pipe);
+	cuda::memcpy_async(A_shared+96,A_global+M3,16,pipe);
+	cuda::memcpy_async(B_shared+0,B_global+0,16,pipe);
+	cuda::memcpy_async(B_shared+32,B_global+K,16,pipe);
+	cuda::memcpy_async(B_shared+64,B_global+K2,16,pipe);
+	cuda::memcpy_async(B_shared+96,B_global+K3,16,pipe);
+	pipe.producer_commit();
+}
+
+__device__ __forceinline__ static void LR(const float* as_local,float(*ar)[4],const float* bs_local,float(*br)[8])
+{
+	#pragma unroll 8
+	for(int j=0;j<8;j++)
+		*(float4*)ar[j]=*(float4*)(as_local+j*32);
+	#pragma unroll 4
+	for(int j=0;j<4;j++)
+	{
+		*(float4*)(br[j]+0)=*(float4*)(bs_local+j*32+0);
+		*(float4*)(br[j]+4)=*(float4*)(bs_local+j*32+4);
+	}
+}
+
+__device__ __forceinline__ static void CR(const float(*ar)[4],const float(*br)[8],float(*cr)[8])
+{
+	#pragma unroll 4
+	for(int k=0;k<4;k++)
+	{
+		#pragma unroll 8
+		for(int i=0;i<8;i++)
+		{
+			#pragma unroll 8
+			for(int j=0;j<8;j++)
+			{
+				cr[i][j]+=ar[i][k]*br[k][j];
+			}
+		}
+	}
+}
+
+__global__ static void impl(const float* a,const float* b, float* c, u2 N, u2 M, u2 K)
+{
+	const u2 tx=threadIdx.x;
+	const u2 ty=threadIdx.y;
+	
+	extern __shared__ float smem[];
+	
+	//128行32列，每8行填充4个
+	const u2 as_size=128*32+16*4;
+	const u2 bs_size=128*32;
+	float (*as)[as_size]=(float(*)[as_size])(smem+0);
+	float (*bs)[bs_size]=(float(*)[bs_size])(smem+as_size*2);
+	
+	__shared__ cuda::pipeline_shared_state<cuda::thread_scope_block, 2> shared_state;
+	auto block = cooperative_groups::this_thread_block();
+	auto pipe = cuda::make_pipeline(block, &shared_state);
+
+	float ar[2][8][4];
+	float br[2][4][8];
+	float cr[8][8];
+
+	//把c初始化为0
+	#pragma unroll 4
+	for(int j=0;j<8;j++)
+		0[(float4*)cr[j]]=1[(float4*)cr[j]]=make_float4(0,0,0,0);
+
+	const float *a_local=a+blockIdx.y*128*M;
+	const float *b_local=b+blockIdx.x*128;
+
+	const u2 LS_M4=M*4;
+	const u2 LS_M3=M*3;
+	const u2 LS_M2=M*2;
+	const u2 LS_A_Row4=tx/8+ty*2;
+	const float* LS_a=a_local+LS_A_Row4*LS_M4+tx%8*4;
+	float* as_cur=as[0];
+	const float*LR_as;
+
+	const u2 LS_K32=K*32;
+	const u2 LS_K4=K*4;
+	const u2 LS_K3=K*3;
+	const u2 LS_K2=K*2;
+	const u2 LS_B_Row4=tx/8+ty%4*2;
+	const float* LS_b=b_local+LS_B_Row4*LS_K4+ty/4*32+tx%8*4;
+	float* bs_cur=bs[0];
+	const float*LR_bs;
+
+	#define CALL_LS LS(pipe, LS_a,as_cur+LS_A_Row4*4*32+ty*4+tx%8*4,M,LS_M2,LS_M3, LS_b,bs_cur+LS_B_Row4*(4*32)+ty/4*32*32+tx%8*4,K,LS_K2,LS_K3); LS_a+=32; LS_b+=LS_K32;
+	#define CALL_LR(stage) LR(LR_as,ar[stage],LR_bs,br[stage]); LR_as+=4; LR_bs+=4*32;
+	#define CALL_CR(stage) CR(ar[stage],br[stage],cr);
+		
+	CALL_LS;
+	as_cur=as[1];
+	bs_cur=bs[1];
+	
+	for(int i=0;i<M;i+=32)
+	{
+		if(i<M-32) {CALL_LS;}
+		
+		as_cur=as[i/32&1];
+		bs_cur=bs[i/32&1];
+
+		pipe.consumer_wait();
+
+		LR_as=as_cur+tx*(8*32+4);
+		LR_bs=bs_cur+ty%4*8+ty/4*32*32;
+
+		CALL_LR(0);
+
+		#pragma unroll 1
+		for(int j=0;j<3;j++)
+		{
+			CALL_LR(1);
+			CALL_CR(0);
+			CALL_LR(0);
+			CALL_CR(1);
+		}
+
+		CALL_LR(1);
+		CALL_CR(0);
+		CALL_CR(1);
+		
+		pipe.consumer_release();
+	}
+
+	for(int i=0;i<8;i++)
+	{
+		(ty*2+0)[(float4*)(c+(blockIdx.y*128+tx*8+i)*K+blockIdx.x*128)]=0[(float4*)cr[i]];
+		(ty*2+1)[(float4*)(c+(blockIdx.y*128+tx*8+i)*K+blockIdx.x*128)]=1[(float4*)cr[i]];
+	}
+}
+
+};
+
+
+
 void sgemm_v1(cudaStream_t stream,const float* a, const float* b, float* c, int n, int m, int k)
 {
 	assert_throw(m%32==0&&n%32==0&&k%32==0,"m,n,k must be divisible by 32");
@@ -462,6 +612,23 @@ void sgemm_v4(cudaStream_t stream,const float* a, const float* b, float* c, int 
 	dim3 block(16,16);
 	sgemm_v4_impl<<<grid,block,0,stream>>>(a,b,c,n,m,k);
 
+}
+
+void sgemm_v5(cudaStream_t stream,const float* a, const float* b, float* c, int n, int m, int k)
+{
+	assert_throw(m%128==0&&n%128==0&&k%128==0,"m,n,k must be divisible by 128");
+
+	const unsigned int smem_size=64*1024+16*16+1024;
+	cudaFuncSetAttribute(
+    sgemm_v5_impl::impl,
+    cudaFuncAttributeMaxDynamicSharedMemorySize,
+    smem_size);
+
+	dim3 grid(k/128,n/128);
+	dim3 block(16,16);
+	sgemm_v5_impl::impl<<<grid,block,smem_size,stream>>>(a,b,c,n,m,k);
+
+	process_error();
 }
 
 void sgemm_cublas(cudaStream_t stream,const float* a, const float* b, float* c, int N, int M, int K)

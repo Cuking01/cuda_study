@@ -14,13 +14,13 @@
 void random_init(std::vector<float>& data, int seed)
 {
 	//mt19937随机数生成器,传入种子
-	std::mt19937 rng(seed);
-	std::uniform_real_distribution<float> dist(0,1);
-	for(auto& x:data)
-		x=dist(rng);
+	// std::mt19937 rng(seed);
+	// std::uniform_real_distribution<float> dist(0,1);
+	// for(auto& x:data)
+	// 	x=dist(rng);
 
-	// for(int i=0;i<data.size();i++)
-	// 	data[i]=i/100000.0;
+	for(int i=0;i<data.size();i++)
+		data[i]=i/100000.0;
 }
 
 void sgemm_ref(const float* a, const float* b, float* c, int n, int m, int k)
@@ -85,6 +85,7 @@ void test_speed(sgemm_func sgemm,std::string name,int n,int m,int k,int times=1)
 	for(int i=0;i<times;i++)
 	{
 		stream->run_any(nop)->record(start)->run_any(sgemm,a_gpu,b_gpu,c_gpu,n,m,k)->record(end)->synchronize();
+		cudaDeviceSynchronize();
 		time+=event_duration(start,end);
 	}
 
@@ -100,21 +101,20 @@ int main()
 
 	test_correctness(sgemm_v1,"sgemm_v1",128,256,512);
 	test_correctness(sgemm_v2,"sgemm_v2",128,256,512);
-	//test_correctness(sgemm_v3,"sgemm_v3",128,128,128);
 	test_correctness(sgemm_v3,"sgemm_v3",128,256,512);
 	test_correctness(sgemm_v4,"sgemm_v4",128,256,512);
+	test_correctness(sgemm_v5,"sgemm_v5",128,256,512);
 	test_correctness(sgemm_cublas,"sgemm_cublas",256,256,256);
-	
+
 	test_speed(sgemm_v2,"sgemm_v2",2048,2048,2048,10);
 	test_speed(sgemm_v1,"sgemm_v1",4096,4096,4096,10);
 	test_speed(sgemm_v2,"sgemm_v2",4096,4096,4096,10);
 	test_speed(sgemm_v3,"sgemm_v3",4096,4096,4096,10);
 	test_speed(sgemm_v4,"sgemm_v4",4096,4096,4096,10);
+	test_speed(sgemm_v5,"sgemm_v5",4096,4096,4096,10);
 
-	test_speed(sgemm_v2,"sgemm_v2",8192,8192,8192,10);
-	test_speed(sgemm_v2,"sgemm_v2",16384,16384,16384,1);
 	test_speed(sgemm_v4,"sgemm_v4",16384,16384,16384,1);
+	test_speed(sgemm_v5,"sgemm_v5",16384,16384,16384,1);
 	test_speed(sgemm_cublas,"sgemm_cublas",16384,16384,16384,1);
 
-	test_speed(sgemm_cublas,"sgemm_cublas",8192,8192,8192,10);
 }
