@@ -442,14 +442,14 @@ __device__ __forceinline__ static void LS(
 )
 {
 	pipe.producer_acquire();
-	cuda::memcpy_async(A_shared+0,A_global+0,16,pipe);
-	cuda::memcpy_async(A_shared+32,A_global+M,16,pipe);
-	cuda::memcpy_async(A_shared+64,A_global+M2,16,pipe);
-	cuda::memcpy_async(A_shared+96,A_global+M3,16,pipe);
-	cuda::memcpy_async(B_shared+0,B_global+0,16,pipe);
-	cuda::memcpy_async(B_shared+32,B_global+K,16,pipe);
-	cuda::memcpy_async(B_shared+64,B_global+K2,16,pipe);
-	cuda::memcpy_async(B_shared+96,B_global+K3,16,pipe);
+	cuda::memcpy_async(A_shared+0,A_global+0,cuda::aligned_size_t<16>(16),pipe);
+	cuda::memcpy_async(A_shared+32,A_global+M,cuda::aligned_size_t<16>(16),pipe);
+	cuda::memcpy_async(A_shared+64,A_global+M2,cuda::aligned_size_t<16>(16),pipe);
+	cuda::memcpy_async(A_shared+96,A_global+M3,cuda::aligned_size_t<16>(16),pipe);
+	cuda::memcpy_async(B_shared+0,B_global+0,cuda::aligned_size_t<16>(16),pipe);
+	cuda::memcpy_async(B_shared+32,B_global+K,cuda::aligned_size_t<16>(16),pipe);
+	cuda::memcpy_async(B_shared+64,B_global+K2,cuda::aligned_size_t<16>(16),pipe);
+	cuda::memcpy_async(B_shared+96,B_global+K3,cuda::aligned_size_t<16>(16),pipe);
 	pipe.producer_commit();
 }
 
@@ -488,7 +488,7 @@ __global__ static void impl(const float* a,const float* b, float* c, u2 N, u2 M,
 	const u2 tx=threadIdx.x;
 	const u2 ty=threadIdx.y;
 	
-	extern __shared__ float smem[];
+	extern __shared__ __align__(16) float smem[];
 	
 	//128行32列，每8行填充4个
 	const u2 as_size=128*32+16*4;
