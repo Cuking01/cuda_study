@@ -36,4 +36,30 @@ int main()
     test_wavefront_7(in,out);
     for(int i=0;i<32;i++)
         std::cout<<out[i]<<std::endl;
+
+    test_wavefront_8(in,out);
+    for(int i=0;i<32;i++)
+        std::cout<<out[i]<<std::endl;
+
+    test_wavefront_9(in,out);
+    for(int i=0;i<32;i++)
+        std::cout<<out[i]<<std::endl;
+
+    test_wavefront_10(in,out);
+    for(int i=0;i<32;i++)
+        std::cout<<out[i]<<std::endl;
+
+    test_wavefront_11(in,out);
+    for(int i=0;i<32;i++)
+        std::cout<<out[i]<<std::endl;
+
+    unsigned int idx[32]={
+         0,12,23,25,23,25, 0,12,    //0 1 4 7
+        10, 3,30, 5,10, 3,30, 5,    //2 3 5 6
+         1, 5,15,22,15, 1, 5,15,    //1 5 6 7
+         2,20,24,27,24,27,20, 2     //0 2 3 4
+    };
+    test_wavefront_x(idx,in,out);
+    for(int i=0;i<32;i++)
+        std::cout<<out[i]<<std::endl;
 }
