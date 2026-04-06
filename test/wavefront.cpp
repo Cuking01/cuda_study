@@ -9,7 +9,7 @@ int main()
     {
         in[i]=i;
     }
-    
+    /*
     test_wavefront_1(in,out);
     for(int i=0;i<32;i++)
         std::cout<<out[i]<<std::endl;
@@ -73,6 +73,7 @@ int main()
     test_wavefront_x(idx2,in,out);
     for(int i=0;i<32;i++)
         std::cout<<out[i]<<std::endl;
+    
 
     unsigned int idx3[32]={
         0,0,0,0,0,0,0,8,
@@ -111,6 +112,46 @@ int main()
         0,0,0,0,0,0,0,0,
     };
     test_wavefront_x(idx6,in,out);
+    for(int i=0;i<32;i++)
+        std::cout<<out[i]<<std::endl;
+    */
+    unsigned int idx7[32]={
+        0,0,0,0,1,1,1,1,
+        0,0,0,0,1,1,1,1,
+        0,0,0,0,0,0,0,0,
+        0,0,0,0,0,0,0,0,
+    };
+    test_wavefront_x(idx7,in,out);
+    for(int i=0;i<32;i++)
+        std::cout<<out[i]<<std::endl;
+
+    unsigned int idx8[32]={
+         0, 0,12,12,23,23,25,25,    //0 1 4 7
+        10,10, 3, 3,30,30, 5, 5,    //2 3 5 6
+         1, 1, 5, 5,15,15,22,22,    //1 5 6 7
+         2, 2,20,20,24,24,27,27,     //0 2 3 4
+    };
+    test_wavefront_x(idx8,in,out);
+    for(int i=0;i<32;i++)
+        std::cout<<out[i]<<std::endl;
+
+    unsigned int idx9[32]={
+         0,12, 0,12,23,25,23,25,    //0 1 4 7
+        10, 3,10, 3,30, 5,30, 5,    //2 3 5 6
+         1, 1, 5, 5,15,15,22,22,    //1 5 6 7
+         2, 2,20,20,24,24,27,27,     //0 2 3 4
+    };
+    test_wavefront_x(idx9,in,out);
+    for(int i=0;i<32;i++)
+        std::cout<<out[i]<<std::endl;
+
+    unsigned int idx10[32]={
+        6,3,6,3,6,3,6,3,
+        6,3,6,3,6,3,6,3,
+        6,3,6,3,6,3,6,3,
+        6,3,6,3,6,3,6,3,
+    };
+    test_wavefront_x(idx10,in,out);
     for(int i=0;i<32;i++)
         std::cout<<out[i]<<std::endl;
 }

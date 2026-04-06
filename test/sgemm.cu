@@ -98,15 +98,17 @@ int main()
 {
 	//先打印一下顺便预热
 	hello_sgemm();
-	test_speed(sgemm_v6, "sgemm_v6",2048,2048,2048,1);
 
-	test_speed(sgemm_v5,"sgemm_v5",2048,2048,2048,1);
 	test_correctness(sgemm_v1,"sgemm_v1",128,256,512);
 	test_correctness(sgemm_v2,"sgemm_v2",128,256,512);
 	test_correctness(sgemm_v3,"sgemm_v3",128,256,512);
 	test_correctness(sgemm_v4,"sgemm_v4",128,256,512);
 	test_correctness(sgemm_v5,"sgemm_v5",128,256,512);
 	test_correctness(sgemm_v6, "sgemm_v6",128,256,512);
+	test_correctness(sgemm_v7, "sgemm_v7",128,256,512);
+
+	test_speed(sgemm_v7, "sgemm_v7",2048,2048,2048,1);
+
 	// test_correctness(sgemm_cublas,"sgemm_cublas",128,256,512);
 	
 	// test_correctness(sgemm_v5,"sgemm_v5",1024,1024,1024);
@@ -117,7 +119,8 @@ int main()
 	test_speed(sgemm_v3,"sgemm_v3",4096,4096,4096,10);
 	test_speed(sgemm_v4,"sgemm_v4",4096,4096,4096,10);
 	test_speed(sgemm_v5,"sgemm_v5",4096,4096,4096,10);
-	test_speed(sgemm_v6, "sgemm_v6",4096,4096,4096,10);
+	test_speed(sgemm_v6,"sgemm_v6",4096,4096,4096,10);
+	test_speed(sgemm_v7,"sgemm_v7",4096,4096,4096,10);
 	test_speed(sgemm_cublas,"sgemm_cublas",4096,4096,4096,10);
 
 	test_speed(sgemm_cublas,"sgemm_cublas",8192,8192,8192,10);
