@@ -11,7 +11,7 @@ add_library(cu_operator STATIC
 	src/sgemm.cu
 )
 
-target_compile_options(cu_operator PRIVATE -O3 --keep -src-in-ptx)
+target_compile_options(cu_operator PRIVATE -O3 --keep -src-in-ptx -lineinfo)
 
 target_include_directories(cu_operator PUBLIC src/)
 
@@ -23,9 +23,10 @@ set_target_properties(cu_operator PROPERTIES
 
 add_library(cu_expriment STATIC
     src/expr/lsu_test.cu
+    src/expr/wavefront_test.cu
 )
 
-target_compile_options(cu_expriment PRIVATE -O3 --keep -src-in-ptx)
+target_compile_options(cu_expriment PRIVATE -O3 --keep -src-in-ptx -lineinfo)
 target_include_directories(cu_expriment PUBLIC src/expr)
 target_link_libraries(cu_expriment PRIVATE cu_operator)
 
@@ -38,11 +39,22 @@ set_target_properties(test_sgemm PROPERTIES
     CXX_STANDARD_REQUIRED ON
 )
 
+##### experiment -- lsu #####
 add_executable(test_lsu test/lsu.cpp)
 target_compile_options(test_lsu PRIVATE -O2)
 target_link_libraries(test_lsu cu_expriment)
 
 set_target_properties(test_lsu PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+)
+
+##### experiment -- wavefront #####
+add_executable(test_wavefront test/wavefront.cpp)
+target_compile_options(test_wavefront PRIVATE -O2)
+target_link_libraries(test_wavefront cu_expriment)
+
+set_target_properties(test_wavefront PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
 )
