@@ -11,16 +11,20 @@
 #include "tool.h"
 #include "sgemm.h"
 
+#define FIXED_DATA
+
 void random_init(std::vector<float>& data, int seed)
 {
+#ifndef FIXED_DATA
 	//mt19937随机数生成器,传入种子
-	// std::mt19937 rng(seed);
-	// std::uniform_real_distribution<float> dist(0,1);
-	// for(auto& x:data)
-	// 	x=dist(rng);
-
+	std::mt19937 rng(seed);
+	std::uniform_real_distribution<float> dist(0,1);
+	for(auto& x:data)
+		x=dist(rng);
+#else
 	for(int i=0;i<data.size();i++)
 		data[i]=i/100000.0;
+#endif
 }
 
 void sgemm_ref(const float* a, const float* b, float* c, int n, int m, int k)
@@ -61,7 +65,7 @@ void test_correctness(sgemm_func sgemm,std::string name,int n,int m,int k)
 	for(int i=0;i<n*k;i++)
 		if(!check_equal(c[i],c_ref[i]))
 		{
-			printf("test correctness not passed %s, n=%d, m=%d, k=%d, failed at c[%d]\n\n",name.c_str(),n,m,k,i);
+			printf("test correctness not passed %s, n=%d, m=%d, k=%d, failed at c[%d]\nc[%d]=%f, c_ref[%d]=%f\n",name.c_str(),n,m,k,i,i,c[i],i,c_ref[i]);
 			return;
 		}
 
@@ -105,9 +109,11 @@ int main()
 	test_correctness(sgemm_v4,"sgemm_v4",128,256,512);
 	test_correctness(sgemm_v5,"sgemm_v5",128,256,512);
 	test_correctness(sgemm_v6, "sgemm_v6",128,256,512);
+	//test_correctness(sgemm_v7, "sgemm_v7",128,128,128);
 	test_correctness(sgemm_v7, "sgemm_v7",128,256,512);
+	test_correctness(sgemm_zhihu, "sgemm_zhihu",128,256,512);
 
-	test_speed(sgemm_v7, "sgemm_v7",2048,2048,2048,1);
+	//test_speed(sgemm_v7, "sgemm_v7",2048,2048,2048,1);
 
 	// test_correctness(sgemm_cublas,"sgemm_cublas",128,256,512);
 	
@@ -122,8 +128,11 @@ int main()
 	test_speed(sgemm_v6,"sgemm_v6",4096,4096,4096,10);
 	test_speed(sgemm_v7,"sgemm_v7",4096,4096,4096,10);
 	test_speed(sgemm_cublas,"sgemm_cublas",4096,4096,4096,10);
+	test_speed(sgemm_zhihu, "sgemm_zhihu",4096,4096,4096,10);
 
+	test_speed(sgemm_v7,"sgemm_v7",8192,8192,8192,10);
 	test_speed(sgemm_cublas,"sgemm_cublas",8192,8192,8192,10);
+	
 	// test_speed(sgemm_v4,"sgemm_v4",16384,16384,16384,1);
 	// test_speed(sgemm_v5,"sgemm_v5",16384,16384,16384,1);
 	// test_speed(sgemm_cublas,"sgemm_cublas",16384,16384,16384,1);

@@ -24,6 +24,7 @@ set_target_properties(cu_operator PROPERTIES
 add_library(cu_expriment STATIC
     src/expr/lsu_test.cu
     src/expr/wavefront_test.cu
+    src/expr/cp_async_test.cu
 )
 
 target_compile_options(cu_expriment PRIVATE -O3 --keep -src-in-ptx -lineinfo)
@@ -55,6 +56,16 @@ target_compile_options(test_wavefront PRIVATE -O2)
 target_link_libraries(test_wavefront cu_expriment)
 
 set_target_properties(test_wavefront PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+)
+
+##### experiment -- cp_async #####
+add_executable(test_cp_async test/cp_async.cpp)
+target_compile_options(test_cp_async PRIVATE -O2)
+target_link_libraries(test_cp_async cu_expriment)
+
+set_target_properties(test_cp_async PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
 )
