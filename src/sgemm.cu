@@ -745,25 +745,43 @@ __global__ static void v6_impl(const float* a,const float* b, float* c, u2 N, u2
 
 };
 
+template<typename T>
+__device__ __forceinline__ static void dev_swap(T& a,T& b)
+{
+	T tmp=a;
+	a=b;
+	b=tmp;
+}
+
 namespace sgemm_v7_impl
 {
 
 using u2=uint32_t;
 
 __device__ __forceinline__ static void LS(
-	const float* A_global,float* A_shared,u2 M,u2 M2,u2 M3,
-	const float* B_global,float* B_shared,u2 K,u2 K2,u2 K3
+	const float* A_global,float4* A_t,u2 M,u2 M2,u2 M3,
+	const float* B_global,float4* B_t,u2 K,u2 K2,u2 K3
 )
 {
-	copy_16B(A_shared+0,A_global+0);
-	copy_16B(A_shared+32,A_global+M);
-	copy_16B(A_shared+64,A_global+M2);
-	copy_16B(A_shared+96,A_global+M3);
-	copy_16B(B_shared+0,B_global+0);
-	copy_16B(B_shared+128,B_global+K);
-	copy_16B(B_shared+256,B_global+K2);
-	copy_16B(B_shared+384,B_global+K3);
-	commit_group();
+	A_t[0]=*(float4*)(A_global+0);
+	A_t[1]=*(float4*)(A_global+M);
+	A_t[2]=*(float4*)(A_global+M2);
+	A_t[3]=*(float4*)(A_global+M3);
+
+	B_t[0]=*(float4*)(B_global+0);
+	B_t[1]=*(float4*)(B_global+K);
+	B_t[2]=*(float4*)(B_global+K2);
+	B_t[3]=*(float4*)(B_global+K3);
+	
+	// copy_16B(A_shared+0,A_global+0);
+	// copy_16B(A_shared+32,A_global+M);
+	// copy_16B(A_shared+64,A_global+M2);
+	// copy_16B(A_shared+96,A_global+M3);
+	// copy_16B(B_shared+0,B_global+0);
+	// copy_16B(B_shared+128,B_global+K);
+	// copy_16B(B_shared+256,B_global+K2);
+	// copy_16B(B_shared+384,B_global+K3);
+	// commit_group();
 }
 
 __device__ __forceinline__ static void CR(float(*cr)[8],const float(*ar)[4],const float(*br)[8],int k)
@@ -774,9 +792,11 @@ __device__ __forceinline__ static void CR(float(*cr)[8],const float(*ar)[4],cons
 		#pragma unroll 4
 		for(int j=0;j<4;j++)
 		{
-			cr[i][(j+k%2*4)^1]+=ar[i][k/2]*br[k/2][j+k%2*4];
-			// if(threadIdx.x==0&&threadIdx.y==1&&blockIdx.x==0&&blockIdx.y==0&&i==0&&j==0&&k%2==0)
-			// 	printf(">>> a=%f b=%f\n",ar[i][k/2],br[k/2][j+k%2*4]);
+			cr[i][(j+k%2*4)]+=ar[i][k/2]*br[k/2][j+k%2*4];
+			// if(threadIdx.x==0&&threadIdx.y==0&&i==0&&j==0&&k%2==0)
+			// {
+			// 	printf("ar[%d][%d]=%f, br[%d][%d]=%f\n",i,k/2,ar[i][k/2],k/2,k%2*4,br[k/2][k%2*4]);
+			// }
 		}
 			
 	}
@@ -784,27 +804,6 @@ __device__ __forceinline__ static void CR(float(*cr)[8],const float(*ar)[4],cons
 
 __device__ __forceinline__ static void LCR(const float* as_local0,const float* as_local1,float(*ar)[8][4],const float* bs_local0,const float* bs_local1,float(*br)[4][8],float(*cr)[8])
 {
-	// const u2 tx=threadIdx.x;
-	// const u2 ty=threadIdx.y;
-
-	// if(threadIdx.x==0&&threadIdx.y==0&&blockIdx.x==0&&blockIdx.y==0)
-	// {
-	// 	for(int i=0;i<8;i++)
-	// 	{
-	// 		for(int j=0;j<4;j++)
-	// 			printf("%f ",ar[1][i][j]);
-	// 		printf("\n");
-	// 	}
-	// 	printf("\n");
-	// 	for(int i=0;i<4;i++)
-	// 	{
-	// 		for(int j=0;j<8;j++)
-	// 			printf("%f ",br[1][i][j]);
-	// 		printf("\n");
-	// 	}
-	// 	printf("\n");
-	// }
-
 	#pragma unroll 8
 	for(int k=0;k<8;k++)
 	{
@@ -814,25 +813,6 @@ __device__ __forceinline__ static void LCR(const float* as_local0,const float* a
 		CR(cr,ar[1],br[1],k);
 	}
 	
-	// if(threadIdx.x==0&&threadIdx.y==0&&blockIdx.x==0&&blockIdx.y==0)
-	// {
-	// 	printf(">>> c00=%f\n",cr[0][0]);
-	// 	for(int i=0;i<8;i++)
-	// 	{
-	// 		for(int j=0;j<4;j++)
-	// 			printf("%f ",ar[0][i][j]);
-	// 		printf("\n");
-	// 	}
-	// 	printf("\n");
-	// 	for(int i=0;i<4;i++)
-	// 	{
-	// 		for(int j=0;j<8;j++)
-	// 			printf("%f ",br[0][i][j]);
-	// 		printf("\n");
-	// 	}
-	// 	printf("\n");
-	// }
-
 	#pragma unroll 8
 	for(int k=0;k<8;k++)
 	{
@@ -841,10 +821,6 @@ __device__ __forceinline__ static void LCR(const float* as_local0,const float* a
 
 		CR(cr,ar[0],br[0],k);
 	}
-	// if(threadIdx.x==0&&threadIdx.y==0&&blockIdx.x==0&&blockIdx.y==0)
-	// {
-	// 	printf(">>> c00=%f\n",cr[0][0]);
-	// }
 }
 
 __global__ static void v7_impl(const float* a,const float* b, float* c, u2 N, u2 M, u2 K)
@@ -860,6 +836,8 @@ __global__ static void v7_impl(const float* a,const float* b, float* c, u2 N, u2
 	float (*as)[as_size]=(float(*)[as_size])(smem+0);
 	float (*bs)[bs_size]=(float(*)[bs_size])(smem+as_size*2);
 
+	float4 at[4],bt[4];
+
 	float ar[2][8][4]={0};
 	float br[2][4][8]={0};
 	float cr[8][8]={0};
@@ -870,9 +848,16 @@ __global__ static void v7_impl(const float* a,const float* b, float* c, u2 N, u2
 	const u2 LS_M4=M*4;
 	const u2 LS_M3=M*3;
 	const u2 LS_M2=M*2;
-	const float* LS_a=a_local+tid/8*LS_M4+tid%8*4;
+	const float* LS_a=a_local+tid/8*LS_M4+(tid%8^ty%2)*4;
 	float* as_cur=as[0];
-	const u2 LR_as_offset=(tx%2*8+ty/2*16)*32;
+	float* as_lst=as[1];
+	const u2 LR_as_offset0=(tx%2*8+ty/2*16)*32+tx%2*4;
+	const u2 LR_as_offset1=(tx%2*8+ty/2*16)*32+(1-tx%2)*4;
+
+	const float* LR_as0_base_cur=as_cur+LR_as_offset0;
+	const float* LR_as1_base_cur=as_cur+LR_as_offset1;
+	const float* LR_as0_base_lst=as_lst+LR_as_offset0;
+	const float* LR_as1_base_lst=as_lst+LR_as_offset1;
 
 	const u2 LS_K32=K*32;
 	const u2 LS_K4=K*4;
@@ -880,38 +865,54 @@ __global__ static void v7_impl(const float* a,const float* b, float* c, u2 N, u2
 	const u2 LS_K2=K*2;
 	const float* LS_b=b_local+tid/32*LS_K4+tid%32*4;
 	float* bs_cur=bs[0];
-	const u2 LR_bs_offset=tx/2*4+ty%2*32;
+	float* bs_lst=bs[1];
+	const u2 LR_bs_offset0=tx/2*4+ty%2*32;//+tx%2*4*128;
+	const u2 LR_bs_offset1=tx/2*4+ty%2*32+4*128;//+(1-tx%2)*4*128;
+
+	const float* LR_bs0_base_cur=bs_cur+LR_bs_offset0;
+	const float* LR_bs1_base_cur=bs_cur+LR_bs_offset1;
+	const float* LR_bs0_base_lst=bs_lst+LR_bs_offset0;
+	const float* LR_bs1_base_lst=bs_lst+LR_bs_offset1;
+
 
 	#define CALL_LS LS(  \
-		LS_a, as_cur+tid/8*(4*32)  +tid%8*4,  M,LS_M2,LS_M3,       \
-		LS_b, bs_cur+tid/32*(4*128)+tid%32*4, K,LS_K2,LS_K3);
+		LS_a, at,  M,LS_M2,LS_M3,       \
+		LS_b, bt, K,LS_K2,LS_K3);
 	
+	#define WRITE_SMEM   \
+		do{   \
+			float* const as_st=as_cur+(tid/8*(4*32)  +tid%8*4);  \
+			float* const bs_st=bs_cur+(tid/32*(4*128)+tid%32*4); \
+			*(float4*)(as_st+0)=*(float4*)(at+0);  \
+			*(float4*)(as_st+32)=*(float4*)(at+1); \
+			*(float4*)(as_st+64)=*(float4*)(at+2); \
+			*(float4*)(as_st+96)=*(float4*)(at+3); \
+                                                   \
+			*(float4*)(bs_st+0)=*(float4*)(bt+0);  \
+			*(float4*)(bs_st+128)=*(float4*)(bt+1);\
+			*(float4*)(bs_st+256)=*(float4*)(bt+2);\
+			*(float4*)(bs_st+384)=*(float4*)(bt+3);\
+		}while(0)
 		
 	CALL_LS;
+	WRITE_SMEM;
+	dev_swap(as_cur,as_lst);
+	dev_swap(bs_cur,bs_lst);
 	
+	__syncthreads();
 	for(int i=0,LS_s=0;i<M;i+=32,LS_s^=1)
 	{
-		// if(i==0&&tid==0&&bid==0)
-		// {
-		// 	printf(">>> %f\n",cr[0][0]);
-		// }
 		if(i<M-32) 
 		{
-			as_cur=as[LS_s^1];
-			bs_cur=bs[LS_s^1];
 			LS_a+=32;
 			LS_b+=LS_K32;
 			CALL_LS;
 		}
 		
-		const float* LR_as0=as[LS_s]+LR_as_offset+tx%2*4;
-		const float* LR_as1=as[LS_s]+LR_as_offset+(1-tx%2)*4;
-		const float* LR_bs0=bs[LS_s]+LR_bs_offset+tx%2*4*128;
-		const float* LR_bs1=bs[LS_s]+LR_bs_offset+(1-tx%2)*4*128;
-
-		wait1();
-
-		__syncthreads();
+		const float* LR_as0=LR_as0_base_cur;
+		const float* LR_as1=LR_as1_base_cur;
+		const float* LR_bs0=LR_bs0_base_cur;
+		const float* LR_bs1=LR_bs1_base_cur;
 
 		for(int j=0;j<4;j++)
 		{                                                             
@@ -922,32 +923,17 @@ __global__ static void v7_impl(const float* a,const float* b, float* c, u2 N, u2
 			LR_bs1+=8*128;
 		}
 
+		WRITE_SMEM;
 
+		dev_swap(LR_as0_base_cur,LR_as0_base_lst);
+		dev_swap(LR_as1_base_cur,LR_as1_base_lst);
+		dev_swap(LR_bs0_base_cur,LR_bs0_base_lst);
+		dev_swap(LR_bs1_base_cur,LR_bs1_base_lst);
+		dev_swap(as_cur,as_lst);
+		dev_swap(bs_cur,bs_lst);
 
 		__syncthreads();
-
-		// if(i==0&&tid==0&&bid==0)
-		// {
-		// 	printf(">>> %f\n",cr[0][0]);
-		// }
 	}
-
-	// if(tid==0&&bid==0)
-	// {
-	// 	for(int i=0;i<8;i++)
-	// 	{
-	// 		for(int j=0;j<4;j++)
-	// 			printf("%f ",ar[1][i][j]);
-	// 		printf("\n");
-	// 	}
-	// 	printf("\n");
-	// 	for(int i=0;i<4;i++)
-	// 	{
-	// 		for(int j=0;j<8;j++)
-	// 			printf("%f ",br[1][i][j]);
-	// 		printf("\n");
-	// 	}
-	// }
 
 	#pragma unroll 8
 	for(int i=0;i<8;i++)
@@ -955,17 +941,17 @@ __global__ static void v7_impl(const float* a,const float* b, float* c, u2 N, u2
 	
 	float* const WL_c=c+(blockIdx.y*128+ty/2*16+tx%2*8)*K+blockIdx.x*128+tx/2*4+ty%2*32;
 
-	#pragma unroll 8
-	for(int i=0;i<8;i++)
-	{
-		#pragma unroll
-		for(int j=0;j<8;j+=2)
-		{
-			float tmp=cr[i][j];
-			cr[i][j]=cr[i][j+1];
-			cr[i][j+1]=tmp;
-		}
-	}
+	// #pragma unroll 8
+	// for(int i=0;i<8;i++)
+	// {
+	// 	#pragma unroll
+	// 	for(int j=0;j<8;j+=2)
+	// 	{
+	// 		float tmp=cr[i][j];
+	// 		cr[i][j]=cr[i][j+1];
+	// 		cr[i][j+1]=tmp;
+	// 	}
+	// }
 
 	for(int i=0;i<8;i++)
 	{
@@ -974,8 +960,6 @@ __global__ static void v7_impl(const float* a,const float* b, float* c, u2 N, u2
 	}
 
 	#undef CALL_LS
-	#undef CALL_LR
-	#undef CALL_CR
 }
 
 };

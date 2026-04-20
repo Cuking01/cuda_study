@@ -9,7 +9,7 @@ int main()
     {
         in[i]=i;
     }
-    /*
+    
     test_wavefront_1(in,out);
     for(int i=0;i<32;i++)
         std::cout<<out[i]<<std::endl;
@@ -114,7 +114,7 @@ int main()
     test_wavefront_x(idx6,in,out);
     for(int i=0;i<32;i++)
         std::cout<<out[i]<<std::endl;
-    */
+    
     unsigned int idx7[32]={
         0,0,0,0,1,1,1,1,
         0,0,0,0,1,1,1,1,

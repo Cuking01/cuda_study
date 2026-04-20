@@ -1,0 +1,3 @@
+[submodule "CuAssembler"]
+	path = CuAssembler
+	url = https://github.com/cloudcores/CuAssembler.git

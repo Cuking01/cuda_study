@@ -11,7 +11,7 @@ add_library(cu_operator STATIC
 	src/sgemm.cu
 )
 
-target_compile_options(cu_operator PRIVATE -O3 --keep -src-in-ptx -lineinfo)
+target_compile_options(cu_operator PRIVATE -O2 --keep -src-in-ptx -lineinfo)
 
 target_include_directories(cu_operator PUBLIC src/)
 
