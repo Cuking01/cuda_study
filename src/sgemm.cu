@@ -960,9 +960,290 @@ __global__ static void v7_impl(const float* a,const float* b, float* c, u2 N, u2
 	}
 
 	#undef CALL_LS
+	#undef WRITE_SMEM
 }
 
 };
+
+namespace sgemm_v8_impl
+{
+
+using u2=uint32_t;
+
+__device__ __forceinline__ static void LS(
+	const float* A_global,float4* A_t,u2 M,u2 M64,u2 M65,
+	const float* B_global,float4* B_t,u2 K,u2 K2,u2 K3
+)
+{
+	A_t[0]=*(float4*)(A_global+0);
+	A_t[1]=*(float4*)(A_global+M);
+	A_t[2]=*(float4*)(A_global+M64);
+	A_t[3]=*(float4*)(A_global+M65);
+
+	B_t[0]=*(float4*)(B_global+0);
+	B_t[1]=*(float4*)(B_global+K);
+	B_t[2]=*(float4*)(B_global+K2);
+	B_t[3]=*(float4*)(B_global+K3);
+}
+
+__device__ __forceinline__ static void CR(float(*cr)[8],const float(*ar)[4],const float *br,int k)
+{
+	#pragma unroll 8
+	for(int i=0;i<8;i++)
+	{
+		#pragma unroll 8
+		for(int j=0;j<8;j++)
+		{
+			cr[i][j]+=ar[i][k]*br[j];
+			if(threadIdx.x==0&&threadIdx.y==0&&i==0&&j==0)
+			{
+				printf("ar[%d][%d]=%f, br[%d]=%f\n",i,k,ar[i][k],k,br[j]);
+			}
+		}
+			
+	}
+}
+
+__device__ __forceinline__ static void LCR(const float* as_local0,const float* as_local1,float(*ar)[8][4],const float* bs_local0,const float* bs_local1,float(*br)[8],float(*cr)[8])
+{
+	#pragma unroll 4
+	for(int k=0;k<4;k++)
+	{
+		*(float4*)ar[k<1][2*((k+3)%4)]=*(float4*)(as_local0+(k*64));
+		*(float4*)ar[k<1][2*((k+3)%4)+1]=*(float4*)(as_local0+(k*64+32));
+
+		*(float4*)(br[k%2]+0)=*(float4*)(bs_local0+(k*128));
+		*(float4*)(br[k%2]+4)=*(float4*)(bs_local0+(k*128+64));
+
+		CR(cr,ar[k>=1],br[(k+1)%2],(k+3)%4);
+	}
+	
+	#pragma unroll 4
+	for(int k=0;k<4;k++)
+	{
+		*(float4*)ar[k>=1][2*((k+3)%4)]=*(float4*)(as_local1+(k*64));
+		*(float4*)ar[k>=1][2*((k+3)%4)+1]=*(float4*)(as_local1+(k*64+32));
+
+		*(float4*)(br[k%2]+0)=*(float4*)(bs_local0+(k*128));
+		*(float4*)(br[k%2]+4)=*(float4*)(bs_local0+(k*128+64));
+
+		CR(cr,ar[k<1],br[(k+1)%2],(k+3)%4);
+	}
+}
+
+__device__ __forceinline__ static void LCR_tail(const float* as_local0,const float* as_local1,float(*ar)[8][4],const float* bs_local0,const float* bs_local1,float(*br)[8],float(*cr)[8])
+{
+	#pragma unroll 4
+	for(int k=0;k<4;k++)
+	{
+		*(float4*)ar[0][2*k]=*(float4*)(as_local0+(k*64));
+		*(float4*)ar[0][2*k+1]=*(float4*)(as_local0+(k*64+32));
+
+		*(float4*)(br[k%2]+0)=*(float4*)(bs_local0+(k*128));
+		*(float4*)(br[k%2]+4)=*(float4*)(bs_local0+(k*128+64));
+
+		CR(cr,ar[1],br[(k+1)%2],k);
+	}
+	
+	#pragma unroll 4
+	for(int k=0;k<4;k++)
+	{
+		*(float4*)ar[1][2*k]=*(float4*)(as_local0+(k*64));
+		*(float4*)ar[1][2*k+1]=*(float4*)(as_local0+(k*64+32));
+
+		*(float4*)(br[k%2]+0)=*(float4*)(bs_local0+(k*128));
+		*(float4*)(br[k%2]+4)=*(float4*)(bs_local0+(k*128+64));
+
+		CR(cr,ar[0],br[(k+1)%2],k);
+	}
+}
+
+__global__ static void v8_impl(const float* a,const float* b, float* c, u2 N, u2 M, u2 K)
+{
+	const u2 tx=threadIdx.x;
+	const u2 ty=threadIdx.y;
+	const u2 tid=tx+ty*16;
+	const u2 bid=blockIdx.y*blockDim.x+blockIdx.x;
+	extern __shared__ __align__(128) float smem[];
+	
+	const u2 as_size=128*32;
+	const u2 bs_size=32*128;
+
+	float (*as)[as_size]=(float(*)[as_size])(smem);
+	float (*bs)[bs_size]=(float(*)[bs_size])(smem+as_size*2);
+
+	for(int i=0;i<16;i++)
+		*(float4*)(smem+tid/8*16*32+tid%8*4+i*32)=make_float4(1,1,1,1);
+	__syncthreads();
+	float4 at[4],bt[4];
+
+	float ar[2][8][4]={0};
+	float br[2][8]={0};
+	float cr[8][8]={0};
+
+	const float *a_local=a+blockIdx.y*128*M;
+	const float *b_local=b+blockIdx.x*128;
+
+	const u2 LS_M65=M*65;
+	const u2 LS_M64=M*64;
+	const u2 LS_M4=M*4;
+	const u2 LS_M3=M*3;
+	const u2 LS_M2=M*2;
+	const float* LS_a=a_local+tid/8*LS_M2+tid%8*4;
+	float* as_cur=as[0];
+	float* as_lst=as[1];
+	
+	const u2 LS_as_offset=tid/8*(2*32) +((tid%8+(tid/8%4==3))^(tid/32%2))*4 +2*32 -(tid/8%4==3?8*32:0) +(tid%32==31?127*32:0);
+
+	const u2 LR_as_offset0=(tx%2*8+ty/2*16)*32+tx%2*4;
+	const u2 LR_as_offset1=(tx%2*8+ty/2*16)*32+(1-tx%2)*4;
+
+	const float* LR_as0_base_cur=as_cur+LR_as_offset0;
+	const float* LR_as1_base_cur=as_cur+LR_as_offset1;
+	const float* LR_as0_base_lst=as_lst+LR_as_offset0;
+	const float* LR_as1_base_lst=as_lst+LR_as_offset1;
+
+	as_lst=as_lst-(tid%32==31?32*256:0);
+
+	const u2 LS_K32=K*32;
+	const u2 LS_K4=K*4;
+	const u2 LS_K3=K*3;
+	const u2 LS_K2=K*2;
+	const float* LS_b=b_local+tid/32*LS_K4+tid%32*4;
+
+	float* bs_cur=bs[0];
+	float* bs_lst=bs[1];
+
+	const u2 LR_bs_offset0=tx/2*4+ty%2*32;//+tx%2*4*128;
+	const u2 LR_bs_offset1=tx/2*4+ty%2*32+4*128;//+(1-tx%2)*4*128;
+
+	const float* LR_bs0_base_cur=bs_cur+LR_bs_offset0;
+	const float* LR_bs1_base_cur=bs_cur+LR_bs_offset1;
+	const float* LR_bs0_base_lst=bs_lst+LR_bs_offset0;
+	const float* LR_bs1_base_lst=bs_lst+LR_bs_offset1;
+
+	const u2 LS_bs_offset=tid/32*(4*128)+tid%32*4;
+
+	bs_cur=bs_cur+4*128;
+	bs_lst=bs_lst+4*128-(tid>=224?64*128:0);
+
+	bool stg1=false;
+
+	#define CALL_LS LS(  \
+		LS_a, at,  M,LS_M64,LS_M65,       \
+		LS_b, bt, K,LS_K2,LS_K3);
+	
+	#define WRITE_SMEM   \
+		do{   \
+			float* const as_st=as_cur+LS_as_offset;  \
+			float* const bs_st=bs_cur+LS_bs_offset; \
+			bool roll=(tid>=248)&&stg1;            \
+			*(float4*)(as_st+0)=*(float4*)(at+0);  \
+			*(float4*)(as_st+32)=*(float4*)(at+1); \
+			*(float4*)(as_st+64*32)=*(float4*)(at+2); \
+			*(float4*)(as_st+65*32)=*(float4*)(at+3); \
+                                                   \
+			*(float4*)(bs_st+0)=*(float4*)(bt+0);  \
+			*(float4*)(bs_st+128)=*(float4*)(bt+1);\
+			*(float4*)(bs_st+256)=*(float4*)(bt+2);\
+			*(float4*)(bs_st+384)=*(float4*)(bt+3);\
+		}while(0)
+		
+	if(tid<128)*(float4*)(bs[0]+tid*4)=make_float4(0,0,0,0);
+	if(tid<32)*(float4*)(as[0]+(tx*8+ty)*32+tx%2*4)=make_float4(0,0,0,0);
+
+	__syncthreads();
+
+	CALL_LS;
+
+
+	WRITE_SMEM;
+	dev_swap(as_cur,as_lst);
+	dev_swap(bs_cur,bs_lst);
+	
+	__syncthreads();
+
+	if(tid==0)
+	{
+		for(int i=0;i<256;i++)
+		{
+			for(int j=0;j<8;j++)
+			{
+				printf("%f ",as[0][i*32+j]);
+			}
+			printf("\n");
+			if(i==127)printf("\n");
+		}
+	}
+
+	__syncthreads();
+
+	for(int i=0;i<M;i+=32)
+	{
+		if(i<M-32) 
+		{
+			stg1=!stg1;
+			LS_a+=32;
+			LS_b+=LS_K32;
+			CALL_LS;
+		}
+		
+		const float* LR_as0=LR_as0_base_cur;
+		const float* LR_as1=LR_as1_base_cur;
+		const float* LR_bs0=LR_bs0_base_cur;
+		const float* LR_bs1=LR_bs1_base_cur;
+
+		for(int j=0;j<4;j++)
+		{                                                             
+			LCR(LR_as0,LR_as1,ar,LR_bs0,LR_bs1,br,cr);
+			LR_as0+=8;
+			LR_bs0+=8*128;
+			LR_as1+=8;
+			LR_bs1+=8*128;
+		}
+		
+		WRITE_SMEM;
+
+		dev_swap(LR_as0_base_cur,LR_as0_base_lst);
+		dev_swap(LR_as1_base_cur,LR_as1_base_lst);
+		dev_swap(LR_bs0_base_cur,LR_bs0_base_lst);
+		dev_swap(LR_bs1_base_cur,LR_bs1_base_lst);
+		dev_swap(as_cur,as_lst);
+		dev_swap(bs_cur,bs_lst);
+		
+		__syncthreads();
+	}
+
+	// #pragma unroll 8
+	// for(int i=0;i<8;i++)
+	// 	CR(cr,ar[1],br[1],i);
+	
+	float* const WL_c=c+(blockIdx.y*128+ty/2*16+tx%2*8)*K+blockIdx.x*128+tx/2*4+ty%2*32;
+
+	// #pragma unroll 8
+	// for(int i=0;i<8;i++)
+	// {
+	// 	#pragma unroll
+	// 	for(int j=0;j<8;j+=2)
+	// 	{
+	// 		float tmp=cr[i][j];
+	// 		cr[i][j]=cr[i][j+1];
+	// 		cr[i][j+1]=tmp;
+	// 	}
+	// }
+
+	for(int i=0;i<8;i++)
+	{
+		*(float4*)(WL_c+i*K)=*(float4*)(cr[i]+0);
+		*(float4*)(WL_c+i*K+64)=*(float4*)(cr[i]+4);
+	}
+
+	#undef CALL_LS
+	#undef WRITE_SMEM
+}
+
+};
+
 
 void sgemm_v1(cudaStream_t stream,const float* a, const float* b, float* c, int n, int m, int k)
 {
@@ -1047,6 +1328,23 @@ void sgemm_v7(cudaStream_t stream,const float* a, const float* b, float* c, int 
 	dim3 grid(k/128,n/128);
 	dim3 block(16,16);
 	sgemm_v7_impl::v7_impl<<<grid,block,smem_size,stream>>>(a,b,c,n,m,k);
+
+	process_error();
+}
+
+void sgemm_v8(cudaStream_t stream,const float* a, const float* b, float* c, int n, int m, int k)
+{
+	assert_throw(m%128==0&&n%128==0&&k%128==0,"m,n,k must be divisible by 128");
+
+	const unsigned int smem_size=64*1024+16*16+1024;
+	cudaFuncSetAttribute(
+    sgemm_v8_impl::v8_impl,
+    cudaFuncAttributeMaxDynamicSharedMemorySize,
+    smem_size);
+
+	dim3 grid(k/128,n/128);
+	dim3 block(16,16);
+	sgemm_v8_impl::v8_impl<<<grid,block,smem_size,stream>>>(a,b,c,n,m,k);
 
 	process_error();
 }

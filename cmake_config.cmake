@@ -9,6 +9,6 @@ set(CMAKE_CXX_COMPILER "/usr/bin/g++")
 set(CMAKE_C_COMPILER "/usr/bin/gcc")
 
 # 设置CUDA架构
-set(CMAKE_CUDA_ARCHITECTURES "86")
+set(CMAKE_CUDA_ARCHITECTURES 86 120)
 
 

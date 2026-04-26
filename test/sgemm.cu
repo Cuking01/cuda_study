@@ -11,7 +11,7 @@
 #include "tool.h"
 #include "sgemm.h"
 
-//#define FIXED_DATA
+#define FIXED_DATA
 
 void random_init(std::vector<float>& data, int seed)
 {
@@ -111,6 +111,8 @@ int main()
 	test_correctness(sgemm_v6, "sgemm_v6",128,256,512);
 	//test_correctness(sgemm_v7, "sgemm_v7",128,128,128);
 	test_correctness(sgemm_v7, "sgemm_v7",128,256,512);
+	test_correctness(sgemm_v8, "sgemm_v8",128,128,128);
+
 	test_correctness(sgemm_zhihu, "sgemm_zhihu",128,256,512);
 
 	test_speed(sgemm_v7, "sgemm_v7",2048,2048,2048,1);

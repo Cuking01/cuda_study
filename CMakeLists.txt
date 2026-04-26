@@ -11,7 +11,7 @@ add_library(cu_operator STATIC
 	src/sgemm.cu
 )
 
-target_compile_options(cu_operator PRIVATE -O2 --keep -src-in-ptx -lineinfo)
+target_compile_options(cu_operator PRIVATE -O2 --keep -src-in-ptx -lineinfo -Xcompiler -Wno-unused-variable)
 
 target_include_directories(cu_operator PUBLIC src/)
 
@@ -64,6 +64,10 @@ set_target_properties(test_wavefront PROPERTIES
 add_executable(test_cp_async test/cp_async.cpp)
 target_compile_options(test_cp_async PRIVATE -O2)
 target_link_libraries(test_cp_async cu_expriment)
+
+##### experiment -- pcie bandwidth #####
+add_executable(test_pcie_bandwidth test/pcie_bandwidth.cu)
+target_compile_options(test_pcie_bandwidth PRIVATE -O2)
 
 set_target_properties(test_cp_async PROPERTIES
     CXX_STANDARD 20

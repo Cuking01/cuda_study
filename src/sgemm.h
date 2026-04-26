@@ -12,5 +12,6 @@ void sgemm_v4(cudaStream_t stream,const float* a, const float* b, float* c, int 
 void sgemm_v5(cudaStream_t stream,const float* a, const float* b, float* c, int n, int m, int k);
 void sgemm_v6(cudaStream_t stream,const float* a, const float* b, float* c, int n, int m, int k);
 void sgemm_v7(cudaStream_t stream,const float* a, const float* b, float* c, int n, int m, int k);
+void sgemm_v8(cudaStream_t stream,const float* a, const float* b, float* c, int n, int m, int k);
 void sgemm_cublas(cudaStream_t stream,const float* a, const float* b, float* c, int N, int M, int K);
 void sgemm_zhihu(cudaStream_t stream,const float* a, const float* b, float* c, int N, int M, int K);
