@@ -995,10 +995,10 @@ __device__ __forceinline__ static void CR(float(*cr)[8],const float(*ar)[4],cons
 		for(int j=0;j<8;j++)
 		{
 			cr[i][j]+=ar[i][k]*br[j];
-			if(threadIdx.x==0&&threadIdx.y==0&&i==0&&j==0)
-			{
-				printf("ar[%d][%d]=%f, br[%d]=%f\n",i,k,ar[i][k],k,br[j]);
-			}
+			// if(threadIdx.x==0&&threadIdx.y==0&&i==0&&j==0)
+			// {
+			// 	printf("ar[%d][%d]=%f, br[%d]=%f\n",i,k,ar[i][k],k,br[j]);
+			// }
 		}
 			
 	}
@@ -1024,8 +1024,8 @@ __device__ __forceinline__ static void LCR(const float* as_local0,const float* a
 		*(float4*)ar[k>=1][2*((k+3)%4)]=*(float4*)(as_local1+(k*64));
 		*(float4*)ar[k>=1][2*((k+3)%4)+1]=*(float4*)(as_local1+(k*64+32));
 
-		*(float4*)(br[k%2]+0)=*(float4*)(bs_local0+(k*128));
-		*(float4*)(br[k%2]+4)=*(float4*)(bs_local0+(k*128+64));
+		*(float4*)(br[k%2]+0)=*(float4*)(bs_local1+(k*128));
+		*(float4*)(br[k%2]+4)=*(float4*)(bs_local1+(k*128+64));
 
 		CR(cr,ar[k<1],br[(k+1)%2],(k+3)%4);
 	}
@@ -1036,26 +1036,19 @@ __device__ __forceinline__ static void LCR_tail(const float* as_local0,const flo
 	#pragma unroll 4
 	for(int k=0;k<4;k++)
 	{
-		*(float4*)ar[0][2*k]=*(float4*)(as_local0+(k*64));
-		*(float4*)ar[0][2*k+1]=*(float4*)(as_local0+(k*64+32));
+		if(k<1)
+		{
+			*(float4*)ar[k<1][2*((k+3)%4)]=*(float4*)(as_local0+(k*64));
+			*(float4*)ar[k<1][2*((k+3)%4)+1]=*(float4*)(as_local0+(k*64+32));
+		}
 
 		*(float4*)(br[k%2]+0)=*(float4*)(bs_local0+(k*128));
 		*(float4*)(br[k%2]+4)=*(float4*)(bs_local0+(k*128+64));
 
-		CR(cr,ar[1],br[(k+1)%2],k);
+		CR(cr,ar[k>=1],br[(k+1)%2],(k+3)%4);
 	}
-	
-	#pragma unroll 4
-	for(int k=0;k<4;k++)
-	{
-		*(float4*)ar[1][2*k]=*(float4*)(as_local0+(k*64));
-		*(float4*)ar[1][2*k+1]=*(float4*)(as_local0+(k*64+32));
 
-		*(float4*)(br[k%2]+0)=*(float4*)(bs_local0+(k*128));
-		*(float4*)(br[k%2]+4)=*(float4*)(bs_local0+(k*128+64));
-
-		CR(cr,ar[0],br[(k+1)%2],k);
-	}
+	CR(cr,ar[1],br[1],3);
 }
 
 __global__ static void v8_impl(const float* a,const float* b, float* c, u2 N, u2 M, u2 K)
@@ -1072,9 +1065,6 @@ __global__ static void v8_impl(const float* a,const float* b, float* c, u2 N, u2
 	float (*as)[as_size]=(float(*)[as_size])(smem);
 	float (*bs)[bs_size]=(float(*)[bs_size])(smem+as_size*2);
 
-	for(int i=0;i<16;i++)
-		*(float4*)(smem+tid/8*16*32+tid%8*4+i*32)=make_float4(1,1,1,1);
-	__syncthreads();
 	float4 at[4],bt[4];
 
 	float ar[2][8][4]={0};
@@ -1122,12 +1112,9 @@ __global__ static void v8_impl(const float* a,const float* b, float* c, u2 N, u2
 	const float* LR_bs0_base_lst=bs_lst+LR_bs_offset0;
 	const float* LR_bs1_base_lst=bs_lst+LR_bs_offset1;
 
-	const u2 LS_bs_offset=tid/32*(4*128)+tid%32*4;
+	const u2 LS_bs_offset=tid/32*(4*128)+tid%32*4+4*128;
 
-	bs_cur=bs_cur+4*128;
-	bs_lst=bs_lst+4*128-(tid>=224?64*128:0);
-
-	bool stg1=false;
+	bs_lst=bs_lst-(tid>=224?64*128:0);
 
 	#define CALL_LS LS(  \
 		LS_a, at,  M,LS_M64,LS_M65,       \
@@ -1137,7 +1124,6 @@ __global__ static void v8_impl(const float* a,const float* b, float* c, u2 N, u2
 		do{   \
 			float* const as_st=as_cur+LS_as_offset;  \
 			float* const bs_st=bs_cur+LS_bs_offset; \
-			bool roll=(tid>=248)&&stg1;            \
 			*(float4*)(as_st+0)=*(float4*)(at+0);  \
 			*(float4*)(as_st+32)=*(float4*)(at+1); \
 			*(float4*)(as_st+64*32)=*(float4*)(at+2); \
@@ -1163,26 +1149,10 @@ __global__ static void v8_impl(const float* a,const float* b, float* c, u2 N, u2
 	
 	__syncthreads();
 
-	if(tid==0)
-	{
-		for(int i=0;i<256;i++)
-		{
-			for(int j=0;j<8;j++)
-			{
-				printf("%f ",as[0][i*32+j]);
-			}
-			printf("\n");
-			if(i==127)printf("\n");
-		}
-	}
-
-	__syncthreads();
-
 	for(int i=0;i<M;i+=32)
 	{
 		if(i<M-32) 
 		{
-			stg1=!stg1;
 			LS_a+=32;
 			LS_b+=LS_K32;
 			CALL_LS;
@@ -1201,7 +1171,8 @@ __global__ static void v8_impl(const float* a,const float* b, float* c, u2 N, u2
 			LR_as1+=8;
 			LR_bs1+=8*128;
 		}
-		
+		__syncthreads();
+
 		WRITE_SMEM;
 
 		dev_swap(LR_as0_base_cur,LR_as0_base_lst);
@@ -1214,9 +1185,7 @@ __global__ static void v8_impl(const float* a,const float* b, float* c, u2 N, u2
 		__syncthreads();
 	}
 
-	// #pragma unroll 8
-	// for(int i=0;i<8;i++)
-	// 	CR(cr,ar[1],br[1],i);
+	LCR_tail(LR_as0_base_cur,LR_as1_base_cur,ar,LR_bs0_base_cur,LR_bs1_base_cur,br,cr);
 	
 	float* const WL_c=c+(blockIdx.y*128+ty/2*16+tx%2*8)*K+blockIdx.x*128+tx/2*4+ty%2*32;
 
