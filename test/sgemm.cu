@@ -112,10 +112,11 @@ int main()
 	//test_correctness(sgemm_v7, "sgemm_v7",128,128,128);
 	test_correctness(sgemm_v7, "sgemm_v7",128,256,512);
 	test_correctness(sgemm_v8, "sgemm_v8",128,256,512);
+	test_correctness(sgemm_v9, "sgemm_v9",128,256,512);
 
 	test_correctness(sgemm_zhihu, "sgemm_zhihu",128,256,512);
 
-	test_speed(sgemm_v7, "sgemm_v7",2048,2048,2048,1);
+	test_speed(sgemm_v9, "sgemm_v9",2048,2048,2048,1);
 
 	// test_correctness(sgemm_cublas,"sgemm_cublas",128,256,512);
 	
@@ -130,6 +131,7 @@ int main()
 	test_speed(sgemm_v6,"sgemm_v6",4096,4096,4096,10);
 	test_speed(sgemm_v7,"sgemm_v7",4096,4096,4096,10);
 	test_speed(sgemm_v8, "sgemm_v8",4096,4096,4096,10);
+	test_speed(sgemm_v9, "sgemm_v9",4096,4096,4096,10);
 	test_speed(sgemm_cublas,"sgemm_cublas",4096,4096,4096,10);
 	test_speed(sgemm_cublas,"sgemm_cublas",4096,4096,4096,10);
 	test_speed(sgemm_zhihu, "sgemm_zhihu",4096,4096,4096,10);

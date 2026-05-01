@@ -25,6 +25,7 @@ add_library(cu_expriment STATIC
     src/expr/lsu_test.cu
     src/expr/wavefront_test.cu
     src/expr/cp_async_test.cu
+    src/expr/ldg128_test.cu
 )
 
 target_compile_options(cu_expriment PRIVATE -O3 --keep -src-in-ptx -lineinfo)
@@ -64,6 +65,11 @@ set_target_properties(test_wavefront PROPERTIES
 add_executable(test_cp_async test/cp_async.cpp)
 target_compile_options(test_cp_async PRIVATE -O2)
 target_link_libraries(test_cp_async cu_expriment)
+
+##### experiment -- ldg128 #####
+add_executable(test_ldg128 test/ldg128.cpp)
+target_compile_options(test_ldg128 PRIVATE -O2)
+target_link_libraries(test_ldg128 cu_expriment)
 
 ##### experiment -- pcie bandwidth #####
 add_executable(test_pcie_bandwidth test/pcie_bandwidth.cu)
