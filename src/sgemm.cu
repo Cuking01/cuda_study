@@ -1272,7 +1272,7 @@ __global__ void v9_impl(const float* a,const float* b, float* c, u2 N, u2 M, u2 
 	float br[2][8]={0};
 	float cr[8][8]={0};
 
-	float* const WL_c=c+(blockIdx.y*128+ty*8)*K+blockIdx.x*128+tx*4;
+	float* const WL_c=c+(blockIdx.y*128+ty/2*16+tx%2*8)*K+blockIdx.x*128+tx/2*4+ty%2*32;
 	bool stage0=true;
 
 	const float *a_local=a+blockIdx.y*128*M;
@@ -1292,12 +1292,12 @@ __global__ void v9_impl(const float* a,const float* b, float* c, u2 N, u2 M, u2 
 	const float* LS_a=a_local+(tid/32*4+tid%4)*M+tid%32/4*4;
 	const u2 LS_as_offset=tid%32*36+tid/32*4;           
 	const float* LS_as_cur=as[0]+LS_as_offset;
-	const float* LR_as_base_cur=as[0]+ty%4*8+ty/4*32*36;
+	const float* LR_as_base_cur=as[0]+tx%2*8+ty%4/2*16+ty/4*32*36;
 
 	const float* LS_b=b_local+tid/32*K*4+tid%32*4;
 	const u2 LS_bs_offset=tid/32*128+tid%32*4;
 	const float* LS_bs_cur=bs[0]+LS_bs_offset;
-	const float* LR_bs_base_cur=bs[0]+tx*4;
+	const float* LR_bs_base_cur=bs[0]+tx/2*4+ty%2*32;
 
 	at[0]=*(float4*)(LS_a+0);
 	at[1]=*(float4*)(LS_a+M32);
