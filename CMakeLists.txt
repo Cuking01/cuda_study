@@ -9,6 +9,7 @@ enable_language(CUDA)
 
 add_library(cu_operator STATIC
 	src/sgemm.cu
+    src/hgemm.cu
 )
 
 target_compile_options(cu_operator PRIVATE -O2 --keep -src-in-ptx -lineinfo -Xcompiler -Wno-unused-variable)
@@ -31,6 +32,10 @@ add_library(cu_expriment STATIC
 target_compile_options(cu_expriment PRIVATE -O3 --keep -src-in-ptx -lineinfo)
 target_include_directories(cu_expriment PUBLIC src/expr)
 target_link_libraries(cu_expriment PRIVATE cu_operator)
+
+add_executable(test_hgemm test/hgemm.cu)
+target_compile_options(test_hgemm PRIVATE -O2)
+target_link_libraries(test_hgemm cu_operator cublas)
 
 add_executable(test_sgemm test/sgemm.cu)
 target_compile_options(test_sgemm PRIVATE -O2)

@@ -88,7 +88,7 @@ void test_speed(sgemm_func sgemm,std::string name,int n,int m,int k,int times=1)
 	float time=0;
 	for(int i=0;i<times;i++)
 	{
-		stream->run_any(nop)->record(start)->run_any(sgemm,a_gpu,b_gpu,c_gpu,n,m,k)->record(end)->synchronize();
+		stream->nop()->record(start)->run_any(sgemm,a_gpu,b_gpu,c_gpu,n,m,k)->record(end)->synchronize();
 		cudaDeviceSynchronize();
 		time+=event_duration(start,end);
 	}

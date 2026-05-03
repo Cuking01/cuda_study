@@ -20,22 +20,6 @@ void hello_sgemm()
 	cudaDeviceSynchronize();
 }
 
-__global__ static void nop_impl(int n,int*p)
-{
-	int x=0;
-	for(int i=0;i<n;i++)
-		x=p[x];
-	p[0]=x;
-}
-
-void nop(cudaStream_t stream)
-{
-	std::vector<int> p{1,0};
-	GPU_Data<int> p_gpu(p);
-
-	nop_impl<<<1,1,0,stream>>>(100000,p_gpu);
-}
-
 __global__ static void sgemm_v1_impl(const float* a, const float* b, float* c, int n, int m, int k)
 {
 	const int tx=threadIdx.x;
@@ -1343,24 +1327,38 @@ __global__ void v9_impl(const float* a,const float* b, float* c, u2 N, u2 M, u2 
 		const float* LR_as_cur=LR_as_base_cur;
 		const float* LR_bs_cur=LR_bs_base_cur;
 
-		for(int j=0;j<32;j+=2)
+		// for(int j=0;j<32;j+=2)
+		// {
+		// 	*(float4*)(ar[0]+0)=*(float4*)(LR_as_cur+0);
+		// 	*(float4*)(ar[0]+4)=*(float4*)(LR_as_cur+4);
+		// 	*(float4*)(br[0]+0)=*(float4*)(LR_bs_cur+0);
+		// 	*(float4*)(br[0]+4)=*(float4*)(LR_bs_cur+64);
+
+		// 	CR(cr,ar[1],br[1]);
+
+		// 	*(float4*)(ar[1]+0)=*(float4*)(LR_as_cur+36);
+		// 	*(float4*)(ar[1]+4)=*(float4*)(LR_as_cur+40);
+		// 	*(float4*)(br[1]+0)=*(float4*)(LR_bs_cur+128);
+		// 	*(float4*)(br[1]+4)=*(float4*)(LR_bs_cur+192);
+
+		// 	CR(cr,ar[0],br[0]);
+
+		// 	LR_as_cur+=72;
+		// 	LR_bs_cur+=256;
+		// }
+
+		#pragma unroll 1
+		for(int j=0;j<32;j++)
 		{
 			*(float4*)(ar[0]+0)=*(float4*)(LR_as_cur+0);
 			*(float4*)(ar[0]+4)=*(float4*)(LR_as_cur+4);
 			*(float4*)(br[0]+0)=*(float4*)(LR_bs_cur+0);
 			*(float4*)(br[0]+4)=*(float4*)(LR_bs_cur+64);
 
-			CR(cr,ar[1],br[1]);
-
-			*(float4*)(ar[1]+0)=*(float4*)(LR_as_cur+36);
-			*(float4*)(ar[1]+4)=*(float4*)(LR_as_cur+40);
-			*(float4*)(br[1]+0)=*(float4*)(LR_bs_cur+128);
-			*(float4*)(br[1]+4)=*(float4*)(LR_bs_cur+192);
-
 			CR(cr,ar[0],br[0]);
 
-			LR_as_cur+=72;
-			LR_bs_cur+=256;
+			LR_as_cur+=36;
+			LR_bs_cur+=128;
 		}
 
 		stmatrix_x4((u2*)(at+0),(u2*)(LS_as_cur+0*32));
@@ -1389,7 +1387,7 @@ __global__ void v9_impl(const float* a,const float* b, float* c, u2 N, u2 M, u2 
 		__syncthreads();
 	}
 
-	CR(cr,ar[1],br[1]);
+	//CR(cr,ar[1],br[1]);
 
 	// #pragma unroll 8
 	// for(int i=0;i<8;i++)

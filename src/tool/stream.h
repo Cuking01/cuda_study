@@ -4,6 +4,13 @@
 #include<cuda_runtime_api.h>
 #include<utility>
 
+__global__ static void nop_impl(int n,int*p)
+{
+	int x=0;
+	for(int i=0;i<n;i++)
+		x=p[x];
+	p[0]=x;
+}
 
 struct Event
 {
@@ -57,6 +64,15 @@ struct Stream
     Stream* synchronize()
     {
         cudaStreamSynchronize(stream);
+        return this;
+    }
+
+    Stream* nop()
+    {
+        std::vector<int> p{1,0};
+        GPU_Data<int> p_gpu(p);
+
+        nop_impl<<<1,1,0,stream>>>(100000,p_gpu);
         return this;
     }
 
