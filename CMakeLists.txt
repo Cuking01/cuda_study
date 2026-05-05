@@ -7,9 +7,14 @@ project(cu_operator LANGUAGES CXX CUDA)
 
 enable_language(CUDA)
 
+find_package(CUDAToolkit REQUIRED)
+
 add_library(cu_operator STATIC
 	src/sgemm.cu
     src/hgemm.cu
+)
+target_link_libraries(cu_operator PUBLIC
+    CUDA::cuda_driver
 )
 
 target_compile_options(cu_operator PRIVATE -O2 --keep -src-in-ptx -lineinfo -Xcompiler -Wno-unused-variable)

@@ -1043,8 +1043,8 @@ __global__ static void v8_impl(const float* a,const float* b, float* c, u2 N, u2
 	const u2 bid=blockIdx.y*blockDim.x+blockIdx.x;
 	extern __shared__ __align__(128) float smem[];
 	
-	const u2 as_size=128*32;
-	const u2 bs_size=32*128;
+	constexpr u2 as_size=128*32;
+	constexpr u2 bs_size=32*128;
 
 	float (*as)[as_size]=(float(*)[as_size])(smem);
 	float (*bs)[bs_size]=(float(*)[bs_size])(smem+as_size*2);
@@ -1244,8 +1244,8 @@ __global__ void v9_impl(const float* a,const float* b, float* c, u2 N, u2 M, u2 
 
 	extern __shared__ __align__(128) float smem[];
 	
-	const u2 as_size=128*(32+4);
-	const u2 bs_size=32*128;
+	constexpr u2 as_size=128*(32+4);
+	constexpr u2 bs_size=32*128;
 
 	float (*as)[as_size]=(float(*)[as_size])(smem);
 	float (*bs)[bs_size]=(float(*)[bs_size])(smem+as_size*2);
