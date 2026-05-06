@@ -12,7 +12,7 @@
 #include "tool.h"
 #include "hgemm.h"
 
-#define FIXED_DATA
+//#define FIXED_DATA
 
 void random_init(std::vector<__half>& data, int seed)
 {
@@ -151,19 +151,19 @@ int main()
 
 	test_correctness(hgemm_v3,"hgemm_v3",128,128,128);
 	
-	// test_correctness(hgemm_v1,"hgemm_v1",1024,512,1024+256);
-	// test_correctness(hgemm_v2,"hgemm_v2",1024,512,1024+256);
-	// test_correctness(hgemm_v3,"hgemm_v3",1024,512,1024+256);
+	test_correctness(hgemm_v1,"hgemm_v1",1024,512,1024+256);
+	test_correctness(hgemm_v2,"hgemm_v2",1024,512,1024+256);
+	test_correctness(hgemm_v3,"hgemm_v3",1024,512,1024+256);
 
-	// test_speed(hgemm_v1,"hgemm_v1",4096,4096,4096,10);
-	// test_speed(hgemm_v2,"hgemm_v2",4096,4096,4096,10);
-	// test_speed(hgemm_v3,"hgemm_v3",4096,4096,4096,10);
+	test_speed(hgemm_v1,"hgemm_v1",4096,4096,4096,10);
+	test_speed(hgemm_v2,"hgemm_v2",4096,4096,4096,10);
+	test_speed(hgemm_v3,"hgemm_v3",4096,4096,4096,10);
 
-	// test_speed(hgemm_v1,"hgemm_v1",8192,8192,8192,10);
-	// test_speed(hgemm_v2,"hgemm_v2",8192,8192,8192,10);
-	// test_speed(hgemm_v3,"hgemm_v3",8192,8192,8192,10);
+	test_speed(hgemm_v1,"hgemm_v1",8192,8192,8192,10);
+	test_speed(hgemm_v2,"hgemm_v2",8192,8192,8192,10);
+	test_speed(hgemm_v3,"hgemm_v3",8192,8192,8192,10);
 
-	// test_speed(hgemm_cublas,"hgemm_cublas",4096,4096,4096,10);
-	// test_speed(hgemm_cublas,"hgemm_cublas",4096,4096,4096,10);
-	// test_speed(hgemm_cublas,"hgemm_cublas",8192,8192,8192,10);
+	test_speed(hgemm_cublas,"hgemm_cublas",4096,4096,4096,10);
+	test_speed(hgemm_cublas,"hgemm_cublas",4096,4096,4096,10);
+	test_speed(hgemm_cublas,"hgemm_cublas",8192,8192,8192,10);
 }

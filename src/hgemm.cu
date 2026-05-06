@@ -124,6 +124,19 @@ __device__ __forceinline__ void tma_load(uint64_t&mbar,half*dst,const CUtensorMa
     );
 }
 
+__device__ __forceinline__ void tma_load(uint64_t&mbar,half*dst,const CUtensorMap&desc,u2 x,u2 y,u2 z)
+{
+    u2 mbar_s = __cvta_generic_to_shared(&mbar);
+    u2 dst_s=__cvta_generic_to_shared(dst);
+    constexpr uint64_t cache_hint=0x1000000000000000; // normal
+    asm volatile("cp.async.bulk.tensor.3d.shared::cta.global.mbarrier::complete_tx::bytes.L2::cache_hint "
+        "[%0],[%1, {%2, %3, %4}],[%5],%6;"
+        :
+        : "r"(dst_s), "l"(&desc), "r"(x), "r"(y), "r"(z), "r"(mbar_s), "l"(cache_hint)
+        : "memory"
+    );
+}
+
 __device__ __forceinline__ void tma_wait(uint64_t&mbar,u2 phase)
 {
     u2 mbar_s = __cvta_generic_to_shared(&mbar);
@@ -550,7 +563,7 @@ __global__ static void v2_impl(const half*a,const half*b,half*c,u2 N,u2 M,u2 K)
 namespace hgemm_v3_impl
 {
 
-__global__ static void v3_impl(const __grid_constant__ CUtensorMap tensor_map_A,const __grid_constant__ CUtensorMap tensor_map_B,half*c,u2 K)
+__global__ static void v3_impl(const __grid_constant__ CUtensorMap tensor_map_A,const __grid_constant__ CUtensorMap tensor_map_B,half*c,u2 M,u2 K)
 {
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 1200
     const u2 tid=threadIdx.x;
@@ -580,168 +593,126 @@ __global__ static void v3_impl(const __grid_constant__ CUtensorMap tensor_map_A,
 
     __syncthreads();
 
-    auto TMA_LS=[&]()
+    auto TMA_LS=[&](int stage,u2 offset)
     {
         if(tid==0)
         {
-            mbarrier_arrive_expect_tx(mbar[0], as_size*2);
-            tma_load(mbar[0],as[0],tensor_map_A,32,0);
+            mbarrier_arrive_expect_tx(mbar[stage], as_size*2+bs_size*2);
+            tma_load(mbar[stage],as[stage],tensor_map_A,offset,by*128);
+            tma_load(mbar[stage],bs[stage],tensor_map_B,0,offset,bx*2);
         }
     };
 
-    TMA_LS();
-    tma_wait(mbar[0],0);
-
-    __syncthreads();
-
-    if(tid==0)
+    auto TMA_WL=[&](int stage)
     {
-        for(int i=0;i<128;i++)
+        tma_wait(mbar[stage],phase[stage]);
+        phase[stage]^=1;
+    };
+
+    TMA_LS(0,0);
+
+    const half* LR_as_cur[2];
+    LR_as_cur[0]=as[0] +wid/4*64*32 +lid/8%2*8*32 +lid%8*32 +((lid/16+0)^lid%8/2)*8;
+    LR_as_cur[1]=as[0] +wid/4*64*32 +lid/8%2*8*32 +lid%8*32 +((lid/16+2)^lid%8/2)*8;
+
+    const half* LR_bs_cur[2];
+    LR_bs_cur[0]=bs[0] +wid%4/2*32*64 +lid/8%2*8*64 +lid%8*64 +((lid/16+0+wid%2*4)^lid%8)*8;
+    LR_bs_cur[1]=bs[0] +wid%4/2*32*64 +lid/8%2*8*64 +lid%8*64 +((lid/16+2+wid%2*4)^lid%8)*8;
+
+    for(int i=0,stage=0;i<M;i+=32,stage^=1,stage0=!stage0)
+    {
+        if(i<M-32)TMA_LS(stage^1,i+32);
+        TMA_WL(stage);
+
+        auto LR=[&](int j)
         {
-            for(int j=0;j<32;j++)
+            #pragma unroll 4
+            for(int k=0;k<4;k++)
+                ldmatrix_x4(ar[k],LR_as_cur[j]+k*16*32);
+            #pragma unroll 2
+            for(int k=0;k<2;k++)
+                ldmatrix_x4_trans(br[k*2],LR_bs_cur[k]+j*16*64);
+        };
+
+        auto CR=[&]()
+        {
+            #pragma unroll 4
+            for(int j=0;j<4;j++)
             {
-                printf("%f ",__half2float(as[0][i*32+j]));
-                if(j%8==7)printf("\n");
+                #pragma unroll 4
+                for(int k=0;k<4;k++)
+                    mma(cr[j][k],ar[j],br[k]);
             }
-            printf("\n");
-        }
+        };
+
+        auto Switch=[&](bool p,auto&v,u2 offset)
+        {
+            if(p)v+=offset;
+            else v-=offset;
+        };
+
+        LR(0); CR(); LR(1); CR();
+
+        Switch(stage0,LR_as_cur[0],as_size);
+        Switch(stage0,LR_as_cur[1],as_size);
+        Switch(stage0,LR_bs_cur[0],bs_size);
+        Switch(stage0,LR_bs_cur[1],bs_size);
+        
+        __syncthreads();
     }
 
-    // const u2 M64=M*64;
-    // const u2 K16=K*16;
+    half* const STG_c=c +by*128u*K +bx*128u +wid/4*64u*K +wid%4*32u +lid/4*K +lid%4*8;
 
-    // const half* LS_a=a +by*128u*M +tid/4*M +tid%4*8;
-    // half* LS_as_cur=as[0]+tid/8*64+(tid%8^tid/8%4)*8;
-    // const half* LR_as_cur[2];
-    // LR_as_cur[0]=as[0] +wid/4*64*32 +lid/8%2*8*32 +lid%8*32 +((lid/16+0)^lid%8/2)*8;
-    // LR_as_cur[1]=as[0] +wid/4*64*32 +lid/8%2*8*32 +lid%8*32 +((lid/16+2)^lid%8/2)*8;
-
-    // const half* LS_b=b +bx*128u +tid/16*K +tid%16*8;
-    // half* LS_bs_cur=bs[0]+tid/16*128+(tid%16^tid/16%8)*8;
-    // const half* LR_bs_cur[2];
-    // LR_bs_cur[0]=bs[0] +lid/8%2*8*128 +lid%8*128 +((lid/16+0+wid%4*4)^lid%8)*8;
-    // LR_bs_cur[1]=bs[0] +lid/8%2*8*128 +lid%8*128 +((lid/16+2+wid%4*4)^lid%8)*8;
-
-    // auto LS=[&]()
-    // {
-    //     copy_16B(LS_as_cur+0,LS_a+0);
-    //     copy_16B(LS_as_cur+64*32,LS_a+M64);
-    //     copy_16B(LS_bs_cur+0,LS_b+0);
-    //     copy_16B(LS_bs_cur+16*128,LS_b+K16);
-    //     commit_group();
-    // };
-    
-    // LS();
-    // LS_as_cur+=as_size;
-    // LS_bs_cur+=bs_size;
-    // LS_a+=32;
-    // LS_b+=32*K;
-    // wait_all();
-    // __syncthreads();
-
-    // for(int i=M/32;i--;)
-    // {
-    //     if(i)LS();
-
-    //     auto LR=[&](int j)
-    //     {
-    //         #pragma unroll 4
-    //         for(int k=0;k<4;k++)
-    //             ldmatrix_x4(ar[k],LR_as_cur[j]+k*16*32);
-    //         #pragma unroll 2
-    //         for(int k=0;k<2;k++)
-    //             ldmatrix_x4_trans(br[k*2],LR_bs_cur[k]+j*16*128);
-    //     };
-
-    //     auto CR=[&]()
-    //     {
-    //         #pragma unroll 4
-    //         for(int j=0;j<4;j++)
-    //         {
-    //             #pragma unroll 4
-    //             for(int k=0;k<4;k++)
-    //                 mma(cr[j][k],ar[j],br[k]);
-    //         }
-    //     };
-
-    //     auto Switch=[&](bool p,auto&v,u2 offset)
-    //     {
-    //         if(p)v+=offset;
-    //         else v-=offset;
-    //     };
-
-    //     LR(0); CR(); LR(1); CR();
-
-    //     Switch(!stage0,LS_as_cur,as_size);
-    //     Switch(!stage0,LS_bs_cur,bs_size);
-    //     Switch(stage0,LR_as_cur[0],as_size);
-    //     Switch(stage0,LR_as_cur[1],as_size);
-    //     Switch(stage0,LR_bs_cur[0],bs_size);
-    //     Switch(stage0,LR_bs_cur[1],bs_size);
+    #pragma unroll 4
+    for(int i=0;i<4;i++)
+    {
+        half* const STG_c_row=STG_c+i*16u*K;
+        half* const STG_c_row2=STG_c_row+8u*K;
+        half2 t[4];
+        half2 z[4];
         
-    //     LS_a+=32;
-    //     LS_b+=32*K;
-    //     stage0=!stage0;
+        #pragma unroll 4
+        for(int j=0;j<4;j++)
+            t[j]=__floats2half2_rn(cr[i][j][0],cr[i][j][1]);
 
-    //     if(i)
-    //     {
-    //         wait_all();
-    //         __syncthreads();
-    //     }
-    // }
+        auto shift=[&](half2 x,int j)
+        {
+            if(j==0)return x;
+            else if(j<0)return __shfl_down_sync(0xffffffff,x,-j);
+            else return __shfl_up_sync(0xffffffff,x,j);
+        };
 
-    // half* const STG_c=c +by*128u*K +bx*128u +wid/4*64u*K +wid%4*32u +lid/4*K +lid%4*8;
-
-    // #pragma unroll 4
-    // for(int i=0;i<4;i++)
-    // {
-    //     half* const STG_c_row=STG_c+i*16u*K;
-    //     half* const STG_c_row2=STG_c_row+8u*K;
-    //     half2 t[4];
-    //     half2 z[4];
-        
-    //     #pragma unroll 4
-    //     for(int j=0;j<4;j++)
-    //         t[j]=__floats2half2_rn(cr[i][j][0],cr[i][j][1]);
-
-    //     auto shift=[&](half2 x,int j)
-    //     {
-    //         if(j==0)return x;
-    //         else if(j<0)return __shfl_down_sync(0xffffffff,x,-j);
-    //         else return __shfl_up_sync(0xffffffff,x,j);
-    //     };
-
-    //     auto restruct=[&](int j)
-    //     {
-    //         half2 z[4];
-    //         #pragma unroll 4
-    //         for(int k=0;k<4;k++)
-    //             z[k]=shift(t[k],k-j);
+        auto restruct=[&](int j)
+        {
+            half2 z[4];
+            #pragma unroll 4
+            for(int k=0;k<4;k++)
+                z[k]=shift(t[k],k-j);
             
-    //         half2 res;
-    //         if(lid%4==0)res=z[0];
-    //         else if(lid%4==1)res=z[1];
-    //         else if(lid%4==2)res=z[2];
-    //         else res=z[3];
-    //         return res;
-    //     };
+            half2 res;
+            if(lid%4==0)res=z[0];
+            else if(lid%4==1)res=z[1];
+            else if(lid%4==2)res=z[2];
+            else res=z[3];
+            return res;
+        };
         
-    //     #pragma unroll 4
-    //     for(int j=0;j<4;j++)
-    //         z[j]=restruct(j);
+        #pragma unroll 4
+        for(int j=0;j<4;j++)
+            z[j]=restruct(j);
 
-    //     *(half8*)STG_c_row=*(half8*)z;
+        *(half8*)STG_c_row=*(half8*)z;
 
-    //     #pragma unroll 4
-    //     for(int j=0;j<4;j++)
-    //         t[j]=__floats2half2_rn(cr[i][j][2],cr[i][j][3]);
+        #pragma unroll 4
+        for(int j=0;j<4;j++)
+            t[j]=__floats2half2_rn(cr[i][j][2],cr[i][j][3]);
 
-    //     #pragma unroll 4
-    //     for(int j=0;j<4;j++)
-    //         z[j]=restruct(j);
+        #pragma unroll 4
+        for(int j=0;j<4;j++)
+            z[j]=restruct(j);
 
-    //     *(half8*)STG_c_row2=*(half8*)z;
-    // }
+        *(half8*)STG_c_row2=*(half8*)z;
+    }
 #endif
 }
 };
@@ -776,7 +747,7 @@ void hgemm_v3(cudaStream_t stream,const half* a, const half* b, half* c, u2 n, u
     uint32_t boxDimA[2] = {32,128};
     uint32_t elementStrideA[2] = {1,1};
 
-    cuTensorMapEncodeTiled(
+    CUresult res = cuTensorMapEncodeTiled(
         &tma_desc_A,
         CU_TENSOR_MAP_DATA_TYPE_FLOAT16,
         2,
@@ -793,15 +764,15 @@ void hgemm_v3(cudaStream_t stream,const half* a, const half* b, half* c, u2 n, u
 
     CUtensorMap tma_desc_B;
 
-    uint64_t globalDimB[2] = {k,m};
-    uint64_t globalStrideB[1] = {k*sizeof(__half)};
-    uint32_t boxDimB[2] = {128,32};
-    uint32_t elementStrideB[2] = {1,1};
+    uint64_t globalDimB[3] = {64,m,k/64};
+    uint64_t globalStrideB[2] = {k*sizeof(__half),128};
+    uint32_t boxDimB[3] = {64,32,2};
+    uint32_t elementStrideB[3] = {1,1,1};
 
-    cuTensorMapEncodeTiled(
+    res = cuTensorMapEncodeTiled(
         &tma_desc_B,
         CU_TENSOR_MAP_DATA_TYPE_FLOAT16,
-        2,
+        3,
         (void*)b,
         globalDimB,
         globalStrideB,
@@ -812,10 +783,10 @@ void hgemm_v3(cudaStream_t stream,const half* a, const half* b, half* c, u2 n, u
         CU_TENSOR_MAP_L2_PROMOTION_L2_128B,
         CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE
     );
-
+    
 	dim3 grid(k/128,n/128);
 	dim3 block(256);
-	hgemm_v3_impl::v3_impl<<<grid,block,0,stream>>>(tma_desc_A,tma_desc_B,c,k);
+	hgemm_v3_impl::v3_impl<<<grid,block,0,stream>>>(tma_desc_A,tma_desc_B,c,m,k);
 }
 
 void hgemm_cublas(cudaStream_t stream, const half* a, const half* b, half* c, u2 N, u2 M, u2 K)
