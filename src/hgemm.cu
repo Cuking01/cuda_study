@@ -98,10 +98,10 @@ __device__ __forceinline__ static void mma(void* cr,const void*ar,const void*br)
 }
 
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 1200
-__device__ __forceinline__ void mbarrier_init(uint64_t& mbar)
+__device__ __forceinline__ void mbarrier_init(uint64_t& mbar,u2 arrive_count=1)
 {
     u2 mbar_s = __cvta_generic_to_shared(&mbar);
-    asm volatile("mbarrier.init.shared::cta.b64 [%0], %1;" :: "r"(mbar_s), "n"(1) : "memory");
+    asm volatile("mbarrier.init.shared::cta.b64 [%0], %1;" :: "r"(mbar_s), "r"(arrive_count) : "memory");
 
 }
 
@@ -137,7 +137,7 @@ __device__ __forceinline__ void tma_load(uint64_t&mbar,half*dst,const CUtensorMa
     );
 }
 
-__device__ __forceinline__ void tma_wait(uint64_t&mbar,u2 phase)
+__device__ __forceinline__ void mbarrier_wait(uint64_t&mbar,u2 phase)
 {
     u2 mbar_s = __cvta_generic_to_shared(&mbar);
     constexpr uint32_t ticks = 0x989680;
@@ -155,6 +155,17 @@ __device__ __forceinline__ void tma_wait(uint64_t&mbar,u2 phase)
         : "memory");
 }
 
+__device__ __forceinline__ void mbarrier_arrive(uint64_t&mbar)
+{
+    u2 mbar_s = __cvta_generic_to_shared(&mbar);
+    asm volatile("mbarrier.arrive.shared::cta.b64 _, [%0];" :: "r"(mbar_s) : "memory");
+}
+
+template<u2 n>
+__device__ __forceinline__ void set_reg()
+{
+    asm volatile("setmaxnreg.dec.sync.aligned.u32 %0;" :: "n"(n) : "memory");
+}
 #endif
 
 template<typename T>
@@ -605,7 +616,7 @@ __global__ static void v3_impl(const __grid_constant__ CUtensorMap tensor_map_A,
 
     auto TMA_WL=[&](int stage)
     {
-        tma_wait(mbar[stage],phase[stage]);
+        mbarrier_wait(mbar[stage],phase[stage]);
         phase[stage]^=1;
     };
 
@@ -717,6 +728,189 @@ __global__ static void v3_impl(const __grid_constant__ CUtensorMap tensor_map_A,
 }
 };
 
+namespace hgemm_v4_impl
+{
+
+__global__ static void v4_impl(const __grid_constant__ CUtensorMap tensor_map_A,const __grid_constant__ CUtensorMap tensor_map_B,half*c,u2 M,u2 K)
+{
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 1200
+    const u2 tid=threadIdx.x;
+    const u2 bx=blockIdx.x;
+    const u2 by=blockIdx.y;
+
+    constexpr u2 as_size=128*32;
+    constexpr u2 bs_size=32*128;
+
+    __shared__ __align__(128) half as[2][as_size];
+    __shared__ __align__(128) half bs[2][bs_size];
+    __shared__ __align__(128) uint64_t full[2];
+    __shared__ __align__(128) uint64_t empty[2];
+
+    if(tid==0)
+    {
+        mbarrier_init(full[0]);
+        mbarrier_init(full[1]);
+        mbarrier_init(empty[0],256);
+        mbarrier_init(empty[1],256);
+    }
+
+    __syncthreads();
+
+    auto producer=[&]()
+    {
+        u2 phase[2]={0,0};
+        auto TMA_LS=[&](int stage,u2 offset)
+        {
+            mbarrier_arrive_expect_tx(full[stage], as_size*2+bs_size*2);
+            tma_load(full[stage],as[stage],tensor_map_A,offset,by*128);
+            tma_load(full[stage],bs[stage],tensor_map_B,0,offset,bx*2);
+        };
+
+        auto WC=[&](int stage)
+        {
+            mbarrier_wait(empty[stage],phase[stage]);
+            phase[stage]^=1;
+        };
+        TMA_LS(0,0);
+        TMA_LS(1,32);
+        for(int i=64,stage=0;i<M;i+=32,stage^=1)
+        {
+            WC(stage);
+            TMA_LS(stage,i);
+        }
+    };
+
+    auto consumer=[&]()
+    {
+        const u2 wid=tid/32;
+        const u2 lid=tid%32;
+        half ar[4][8];
+        half br[4][4];
+        float cr[4][4][4]={0};
+        u2 phase[2]={0,0};
+        bool stage0=true;
+
+        const half* LR_as_cur[2];
+        LR_as_cur[0]=as[0] +wid/4*64*32 +lid/8%2*8*32 +lid%8*32 +((lid/16+0)^lid%8/2)*8;
+        LR_as_cur[1]=as[0] +wid/4*64*32 +lid/8%2*8*32 +lid%8*32 +((lid/16+2)^lid%8/2)*8;
+
+        const half* LR_bs_cur[2];
+        LR_bs_cur[0]=bs[0] +wid%4/2*32*64 +lid/8%2*8*64 +lid%8*64 +((lid/16+0+wid%2*4)^lid%8)*8;
+        LR_bs_cur[1]=bs[0] +wid%4/2*32*64 +lid/8%2*8*64 +lid%8*64 +((lid/16+2+wid%2*4)^lid%8)*8;
+
+        auto TMA_WL=[&](int stage)
+        {
+            mbarrier_wait(full[stage],phase[stage]);
+            phase[stage]^=1;
+        };
+
+        auto C=[&](int stage)
+        {
+            auto LR=[&](int j)
+            {
+                #pragma unroll 4
+                for(int k=0;k<4;k++)
+                    ldmatrix_x4(ar[k],LR_as_cur[j]+k*16*32);
+                #pragma unroll 2
+                for(int k=0;k<2;k++)
+                    ldmatrix_x4_trans(br[k*2],LR_bs_cur[k]+j*16*64);
+            };
+
+            auto CR=[&]()
+            {
+                #pragma unroll 4
+                for(int j=0;j<4;j++)
+                {
+                    #pragma unroll 4
+                    for(int k=0;k<4;k++)
+                        mma(cr[j][k],ar[j],br[k]);
+                }
+            };
+
+            LR(0); CR(); LR(1); CR();
+
+            mbarrier_arrive(empty[stage]);
+        };
+
+        for(int i=0,stage=0;i<M;i+=32,stage^=1,stage0=!stage0)
+        {
+            TMA_WL(stage);
+            C(stage);
+
+            auto Switch=[&](bool p,auto&v,u2 offset)
+            {
+                if(p)v+=offset;
+                else v-=offset;
+            };
+
+            Switch(stage0,LR_as_cur[0],as_size);
+            Switch(stage0,LR_as_cur[1],as_size);
+            Switch(stage0,LR_bs_cur[0],bs_size);
+            Switch(stage0,LR_bs_cur[1],bs_size);
+        }
+
+        half* const STG_c=c +by*128u*K +bx*128u +wid/4*64u*K +wid%4*32u +lid/4*K +lid%4*8;
+
+        #pragma unroll 4
+        for(int i=0;i<4;i++)
+        {
+            half* const STG_c_row=STG_c+i*16u*K;
+            half* const STG_c_row2=STG_c_row+8u*K;
+            half2 t[4];
+            half2 z[4];
+            
+            #pragma unroll 4
+            for(int j=0;j<4;j++)
+                t[j]=__floats2half2_rn(cr[i][j][0],cr[i][j][1]);
+
+            auto shift=[&](half2 x,int j)
+            {
+                if(j==0)return x;
+                else if(j<0)return __shfl_down_sync(0xffffffff,x,-j);
+                else return __shfl_up_sync(0xffffffff,x,j);
+            };
+
+            auto restruct=[&](int j)
+            {
+                half2 z[4];
+                #pragma unroll 4
+                for(int k=0;k<4;k++)
+                    z[k]=shift(t[k],k-j);
+                
+                half2 res;
+                if(lid%4==0)res=z[0];
+                else if(lid%4==1)res=z[1];
+                else if(lid%4==2)res=z[2];
+                else res=z[3];
+                return res;
+            };
+            
+            #pragma unroll 4
+            for(int j=0;j<4;j++)
+                z[j]=restruct(j);
+
+            *(half8*)STG_c_row=*(half8*)z;
+
+            #pragma unroll 4
+            for(int j=0;j<4;j++)
+                t[j]=__floats2half2_rn(cr[i][j][2],cr[i][j][3]);
+
+            #pragma unroll 4
+            for(int j=0;j<4;j++)
+                z[j]=restruct(j);
+
+            *(half8*)STG_c_row2=*(half8*)z;
+        }
+    };
+
+    if(tid==256)producer();
+    else consumer();
+#endif
+}
+};
+
+
+
 void hgemm_v1(cudaStream_t stream,const half* a, const half* b, half* c, u2 n, u2 m, u2 k)
 {
     assert_throw(m%128==0&&n%128==0&&k%128==0,"m,n,k must be divisible by 128");
@@ -788,6 +982,61 @@ void hgemm_v3(cudaStream_t stream,const half* a, const half* b, half* c, u2 n, u
 	dim3 block(256);
 	hgemm_v3_impl::v3_impl<<<grid,block,0,stream>>>(tma_desc_A,tma_desc_B,c,m,k);
 }
+
+void hgemm_v4(cudaStream_t stream,const half* a, const half* b, half* c, u2 n, u2 m, u2 k)
+{
+    assert_throw(m%128==0&&n%128==0&&k%128==0,"m,n,k must be divisible by 128");
+
+
+    CUtensorMap tma_desc_A;
+
+    uint64_t globalDimA[2] = {m,n};
+    uint64_t globalStrideA[1] = {m*sizeof(__half)};
+    uint32_t boxDimA[2] = {32,128};
+    uint32_t elementStrideA[2] = {1,1};
+
+    CUresult res = cuTensorMapEncodeTiled(
+        &tma_desc_A,
+        CU_TENSOR_MAP_DATA_TYPE_FLOAT16,
+        2,
+        (void*)a,
+        globalDimA,
+        globalStrideA,
+        boxDimA,
+        elementStrideA,
+        CU_TENSOR_MAP_INTERLEAVE_NONE,
+        CU_TENSOR_MAP_SWIZZLE_64B,
+        CU_TENSOR_MAP_L2_PROMOTION_L2_128B,
+        CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE
+    );
+
+    CUtensorMap tma_desc_B;
+
+    uint64_t globalDimB[3] = {64,m,k/64};
+    uint64_t globalStrideB[2] = {k*sizeof(__half),128};
+    uint32_t boxDimB[3] = {64,32,2};
+    uint32_t elementStrideB[3] = {1,1,1};
+
+    res = cuTensorMapEncodeTiled(
+        &tma_desc_B,
+        CU_TENSOR_MAP_DATA_TYPE_FLOAT16,
+        3,
+        (void*)b,
+        globalDimB,
+        globalStrideB,
+        boxDimB,
+        elementStrideB,
+        CU_TENSOR_MAP_INTERLEAVE_NONE,
+        CU_TENSOR_MAP_SWIZZLE_128B,
+        CU_TENSOR_MAP_L2_PROMOTION_L2_128B,
+        CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE
+    );
+    
+	dim3 grid(k/128,n/128);
+	dim3 block(257);
+	hgemm_v4_impl::v4_impl<<<grid,block,0,stream>>>(tma_desc_A,tma_desc_B,c,m,k);
+}
+
 
 void hgemm_cublas(cudaStream_t stream, const half* a, const half* b, half* c, u2 N, u2 M, u2 K)
 {
