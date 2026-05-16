@@ -946,7 +946,6 @@ __global__ static void v5_impl(const __grid_constant__ CUtensorMap tensor_map_A,
 
     auto producer=[&]()
     {
-        u2 phase[2]={0,0};
         auto TMA_LS=[&](int stage,u2 offset)
         {
             if(tid==256)
@@ -959,14 +958,16 @@ __global__ static void v5_impl(const __grid_constant__ CUtensorMap tensor_map_A,
 
         auto WC=[&](int stage)
         {
-            barrier_sync(1,256+32);
+            barrier_sync(stage,256+32);
         };
         TMA_LS(0,0);
         TMA_LS(1,32);
-        for(int i=64,stage=0;i<M;i+=32,stage^=1)
+        for(int i=64;i<M;i+=64)
         {
-            WC(stage);
-            TMA_LS(stage,i);
+            WC(0);
+            TMA_LS(0,i);
+            WC(1);
+            TMA_LS(1,i+32);
         }
     };
 
@@ -1000,10 +1001,10 @@ __global__ static void v5_impl(const __grid_constant__ CUtensorMap tensor_map_A,
             {
                 #pragma unroll 4
                 for(int k=0;k<4;k++)
-                    ldmatrix_x4(ar[k],LR_as_cur[j]+k*16*32);
+                    ldmatrix_x4(ar[k],LR_as_cur[j]+(k*16*32+stage*as_size));
                 #pragma unroll 2
                 for(int k=0;k<2;k++)
-                    ldmatrix_x4_trans(br[k*2],LR_bs_cur[k]+j*16*64);
+                    ldmatrix_x4_trans(br[k*2],LR_bs_cur[k]+(j*16*64+stage*bs_size));
             };
 
             auto CR=[&]()
@@ -1019,24 +1020,15 @@ __global__ static void v5_impl(const __grid_constant__ CUtensorMap tensor_map_A,
 
             LR(0); CR(); LR(1); CR();
 
-            barrier_arrive(1,256+32);
+            barrier_arrive(stage,256+32);
         };
 
-        for(int i=0,stage=0;i<M;i+=32,stage^=1,stage0=!stage0)
+        for(int i=0;i<M;i+=64)
         {
-            TMA_WL(stage);
-            C(stage);
-
-            auto Switch=[&](bool p,auto&v,u2 offset)
-            {
-                if(p)v+=offset;
-                else v-=offset;
-            };
-
-            Switch(stage0,LR_as_cur[0],as_size);
-            Switch(stage0,LR_as_cur[1],as_size);
-            Switch(stage0,LR_bs_cur[0],bs_size);
-            Switch(stage0,LR_bs_cur[1],bs_size);
+            TMA_WL(0);
+            C(0);
+            TMA_WL(1);
+            C(1);
         }
 
         half* const STG_c=c +by*128u*K +bx*128u +wid/4*64u*K +wid%4*32u +lid/4*K +lid%4*8;

@@ -177,4 +177,8 @@ int main()
 	test_speed(hgemm_v4,"hgemm_v4",8192,8192,8192,10);
 	test_speed(hgemm_v5,"hgemm_v5",8192,8192,8192,10);
 	test_speed(hgemm_cublas,"hgemm_cublas",8192,8192,8192,10);
+
+	test_speed(hgemm_v4,"hgemm_v4",12288,12288,12288,10);
+	test_speed(hgemm_v5,"hgemm_v5",12288,12288,12288,10);
+	test_speed(hgemm_cublas,"hgemm_cublas",12288,12288,12288,10);
 }
