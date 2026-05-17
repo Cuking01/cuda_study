@@ -5,4 +5,4 @@
 using u2=uint32_t;
 
 void hello_fa();
-void fa_cudnn(cudaStream_t stream, const half* q, const half* k, const half* v, half* o, int n);
+void fa_cudnn(cudaStream_t stream, const half* q, const half* k, const half* v, half* o, int n, int heads);
