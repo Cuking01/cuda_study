@@ -1,3 +1,5 @@
+#pragma once
+
 #include<cuda_fp16.h>
 #include<stdint.h>
 using u2=uint32_t;
