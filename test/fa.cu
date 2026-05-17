@@ -194,9 +194,12 @@ void test_speed(fa_func fa, std::string name, int n, int heads, int times = 1)
 
 int main()
 {
-	test_correctness(fa_cudnn, "fa_cudnn", 512, 4);
+	test_correctness(fa_cudnn,"fa_cudnn",512,4);
 
-	test_speed(fa_cudnn, "fa_cudnn", 36*1024, 4, 10);
-
-    test_speed(fa_cudnn, "fa_cudnn", 36*1024*2, 4, 10);
+	test_speed(fa_cudnn,"fa_cudnn",16384,6,10);
+    test_speed(fa_cudnn,"fa_cudnn",16384,36,10);
+    test_speed(fa_cudnn,"fa_cudnn",32768,6,10);
+    test_speed(fa_cudnn,"fa_cudnn",32768,36,10);
+    test_speed(fa_cudnn,"fa_cudnn",65536,6,10);
+    test_speed(fa_cudnn,"fa_cudnn",65536,36,10);
 }
