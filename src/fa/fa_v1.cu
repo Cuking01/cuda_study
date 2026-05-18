@@ -27,7 +27,7 @@ __global__ static void fa_v1_impl(
     const u2 task_id=gridDim.y-blockIdx.y-1;
     const u2 tid=threadIdx.x;
 
-    extern __shared__ __align__(128) half smem[];
+    extern __shared__ __align__(1024) half smem[];
     half* const ks=smem;
     half* const vs=smem+128*128;
     __shared__ __align__(128) uint64_t full_k,full_v;
@@ -134,7 +134,7 @@ void fa_v1(cudaStream_t stream, const half* q, const half* k, const half* v, hal
 {
     assert_throw(n%128==0,"n must be divisible by 128");
 
-	const unsigned int smem_size=64*1024+1024;
+	const unsigned int smem_size=64*1024;
 	cudaFuncSetAttribute(
     fa_v1_impl,
     cudaFuncAttributeMaxDynamicSharedMemorySize,
