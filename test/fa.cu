@@ -202,4 +202,6 @@ int main()
     test_speed(fa_cudnn,"fa_cudnn",32768,36,10);
     test_speed(fa_cudnn,"fa_cudnn",65536,6,10);
     test_speed(fa_cudnn,"fa_cudnn",65536,36,10);
+    test_speed(fa_cudnn,"fa_cudnn",1<<17,6,10);
+    test_speed(fa_cudnn,"fa_cudnn",1<<17,36,10);
 }

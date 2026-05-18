@@ -28,10 +28,12 @@ if (NOT CUDNN_INCLUDE_DIR OR NOT CUDNN_LIBRARY)
     message(FATAL_ERROR "cuDNN not found. Please set CUDNN_ROOT or install cuDNN.")
 endif()
 
+file(GLOB FA_SRC CONFIGURE_DEPENDS "src/fa/*")
+
 add_library(cu_operator STATIC
 	src/sgemm.cu
     src/hgemm.cu
-    src/fa.cu
+    ${FA_SRC}
 )
 target_link_libraries(cu_operator PUBLIC
     CUDA::cuda_driver

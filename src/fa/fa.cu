@@ -1,6 +1,4 @@
-
-#include "fa/fa_cudnn.cu"
-#include <stdio.h>
+#include<stdio.h>
 
 __global__ void hello_fa_impl()
 {
