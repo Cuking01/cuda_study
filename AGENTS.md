@@ -9,6 +9,8 @@
 
 ## Git 约定
 
+- 实现新功能前，先切换到 `main` 并执行 `git pull`，再从最新 `main` 切出新分支。
+- commit message 使用中文。
 - 只能推送 `codex/` 开头的远端分支。
 - 不要直接推送 `main`。
 - 分支名保持简短明确，例如 `codex/support-multi-head-fa`。

@@ -98,6 +98,30 @@ bool check_equal(__half a, __half b)
 	return diff < 2e-2f || diff / scale < 2e-2f;
 }
 
+struct Stat
+{
+	double avg;
+	double stddev;
+};
+
+Stat calc_stat(const std::vector<double>& values)
+{
+	double sum = 0.0;
+	for (double value : values)
+		sum += value;
+
+	double avg = sum / values.size();
+	double sq_sum = 0.0;
+	for (double value : values)
+	{
+		double diff = value - avg;
+		sq_sum += diff * diff;
+	}
+
+	double stddev = values.size() > 1 ? sqrt(sq_sum / (values.size() - 1)) : 0.0;
+	return {avg, stddev};
+}
+
 typedef void (*fa_func)(
 	cudaStream_t stream,
 	const __half* q,
@@ -169,7 +193,11 @@ void test_speed(fa_func fa, std::string name, int n, int heads, int times = 1)
 	Stream stream;
 	Event start, end;
 
-	float time = 0.0f;
+	double flops = 2.0 * HEAD_DIM * heads * n * (n + 1);
+	std::vector<double> time_ms;
+	std::vector<double> tflops;
+	time_ms.reserve(times);
+	tflops.reserve(times);
 
 	for (int i = 0; i < times; i++)
 	{
@@ -180,16 +208,32 @@ void test_speed(fa_func fa, std::string name, int n, int heads, int times = 1)
 			->synchronize();
 
 		cudaDeviceSynchronize();
-		time += event_duration(start, end);
+		double elapsed = event_duration(start, end);
+		time_ms.push_back(elapsed);
+		tflops.push_back(flops / elapsed / 1e9);
 	}
 
-	double flops = 2.0 * HEAD_DIM * heads * n * (n + 1);
+	Stat time_stat = calc_stat(time_ms);
+	Stat tflops_stat = calc_stat(tflops);
 
-	printf("%s avg time: %f ms\n%f Tflops\n\n",
-		name.c_str(),
-		time / times,
-		flops * times / time / 1e9
-	);
+	if (time_ms.size() > 1)
+	{
+		printf("%s avg time: %f +/- %f ms (3stddev)\n%f +/- %f Tflops (3stddev)\n\n",
+			name.c_str(),
+			time_stat.avg,
+			3.0 * time_stat.stddev,
+			tflops_stat.avg,
+			3.0 * tflops_stat.stddev
+		);
+	}
+	else
+	{
+		printf("%s avg time: %f ms\n%f Tflops\n\n",
+			name.c_str(),
+			time_stat.avg,
+			tflops_stat.avg
+		);
+	}
 }
 
 int main()
