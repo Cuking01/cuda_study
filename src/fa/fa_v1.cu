@@ -12,6 +12,8 @@
 #include "tool.h"
 #include "ptx.h"
 #include "type.h"
+#include "debug.h"
+
 
 
 __global__ static void fa_v1_impl(
@@ -83,7 +85,12 @@ __global__ static void fa_v1_impl(
 
     auto consumer=[&]()
     {
+        const u2 wid=tid/32;
+        const u2 lid=tid%32;
+
         u2 phase_k=0,phase_v=0;
+        half2 qr[8][4];
+
         auto TMA_WLK=[&]()
         {
             mbarrier_wait(full_k,phase_k);
@@ -93,6 +100,18 @@ __global__ static void fa_v1_impl(
         {
             mbarrier_wait(full_v,phase_v);
             phase_v^=1;
+        };
+
+        auto load_qr=[&]()
+        {
+            const half*q_tlocal=q+(task_id*128u+wid*16u+lid/4)*128u+lid%4*2;
+            for(int i=0;i<8;i++)
+            {
+                qr[i][0]=*(half2*)(q_tlocal+i*16u);
+                qr[i][1]=*(half2*)(q_tlocal+i*16u+8u*128u);
+                qr[i][2]=*(half2*)(q_tlocal+i*16u+8u);
+                qr[i][3]=*(half2*)(q_tlocal+i*16u+8u*128u+8u);
+            }
         };
 
         auto print=[&](half* p)
@@ -111,14 +130,13 @@ __global__ static void fa_v1_impl(
             printf("\n");
         };
 
+        load_qr();
+
         for(u2 i=0;i<=task_id;i++)
         {
             TMA_WLK();
-            
-            print(ks);
             barrier_arrive(0,256+32);
             TMA_WLV();
-            print(vs);
             barrier_arrive(1,256+32);
         }
         
