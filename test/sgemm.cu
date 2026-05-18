@@ -45,6 +45,30 @@ bool check_equal(float a,float b)
 	return fabs(a-b)<1e-6||fabs(a-b)/(std::max(fabs(a),fabs(b)))<1e-4;
 }
 
+struct Stat
+{
+	double avg;
+	double stddev;
+};
+
+Stat calc_stat(const std::vector<double>& values)
+{
+	double sum=0;
+	for(double value:values)
+		sum+=value;
+
+	double avg=sum/values.size();
+	double sq_sum=0;
+	for(double value:values)
+	{
+		double diff=value-avg;
+		sq_sum+=diff*diff;
+	}
+
+	double stddev=values.size()>1?sqrt(sq_sum/(values.size()-1)):0.0;
+	return {avg,stddev};
+}
+
 typedef void (*sgemm_func)(cudaStream_t stream,const float* a, const float* b, float* c, int n, int m, int k);
 
 void test_correctness(sgemm_func sgemm,std::string name,int n,int m,int k)
@@ -85,15 +109,42 @@ void test_speed(sgemm_func sgemm,std::string name,int n,int m,int k,int times=1)
 	Stream stream;
 	Event start,end;
 
-	float time=0;
+	double flops=2.0*n*m*k;
+	std::vector<double> time_ms;
+	std::vector<double> tflops;
+	time_ms.reserve(times);
+	tflops.reserve(times);
+
 	for(int i=0;i<times;i++)
 	{
 		stream->nop()->record(start)->run_any(sgemm,a_gpu,b_gpu,c_gpu,n,m,k)->record(end)->synchronize();
 		cudaDeviceSynchronize();
-		time+=event_duration(start,end);
+		double elapsed=event_duration(start,end);
+		time_ms.push_back(elapsed);
+		tflops.push_back(flops/elapsed/1e9);
 	}
 
-	printf("%s avg time: %f ms\n%f Tflops\n\n",name.c_str(),time/times,2.0*n*m*k*times/(time)/1e9);
+	Stat time_stat=calc_stat(time_ms);
+	Stat tflops_stat=calc_stat(tflops);
+
+	if(time_ms.size()>1)
+	{
+		printf("%s avg time: %f +/- %f ms (3stddev)\n%f +/- %f Tflops (3stddev)\n\n",
+			name.c_str(),
+			time_stat.avg,
+			3.0*time_stat.stddev,
+			tflops_stat.avg,
+			3.0*tflops_stat.stddev
+		);
+	}
+	else
+	{
+		printf("%s avg time: %f ms\n%f Tflops\n\n",
+			name.c_str(),
+			time_stat.avg,
+			tflops_stat.avg
+		);
+	}
 }
 
 
