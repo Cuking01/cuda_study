@@ -2,7 +2,7 @@
 
 __global__ void hello_fa_impl()
 {
-    printf("hello fa\n");
+    printf("hello flash attention\n");
 }
 
 void hello_fa()

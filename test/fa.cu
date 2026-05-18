@@ -12,7 +12,7 @@
 #include "tool.h"
 #include "fa.h"
 
-//#define FIXED_DATA
+#define FIXED_DATA
 
 constexpr int HEAD_DIM = 128;
 
@@ -128,11 +128,11 @@ typedef void (*fa_func)(
 	const __half* k,
 	const __half* v,
 	__half* o,
-	int n,
-	int heads
+	u2 n,
+	u2 heads
 );
 
-void test_correctness(fa_func fa, std::string name, int n, int heads)
+void test_correctness(fa_func fa, std::string name, u2 n, u2 heads)
 {
 	const size_t size = (size_t)heads * n * HEAD_DIM;
 	std::vector<__half> q(size), k(size), v(size);
@@ -177,7 +177,7 @@ void test_correctness(fa_func fa, std::string name, int n, int heads)
 	printf("test correctness %s, n=%d, heads=%d, passed\n\n", name.c_str(), n, heads);
 }
 
-void test_speed(fa_func fa, std::string name, int n, int heads, int times = 1)
+void test_speed(fa_func fa, std::string name, u2 n, u2 heads, int times = 1)
 {
 	printf("test %s, n=%d, heads=%d, head_dim=%d, %d times\n", name.c_str(), n, heads, HEAD_DIM, times);
 
@@ -238,7 +238,17 @@ void test_speed(fa_func fa, std::string name, int n, int heads, int times = 1)
 
 int main()
 {
+	test_correctness(fa_v1,"fa_v1",512,4);
 	test_correctness(fa_cudnn,"fa_cudnn",512,4);
+
+    test_speed(fa_cudnn,"fa_cudnn",16384,6,1);
+    test_speed(fa_cudnn,"fa_cudnn",16384,36,1);
+    test_speed(fa_cudnn,"fa_cudnn",32768,6,1);
+    test_speed(fa_cudnn,"fa_cudnn",32768,36,1);
+    test_speed(fa_cudnn,"fa_cudnn",65536,6,1);
+    test_speed(fa_cudnn,"fa_cudnn",65536,36,1);
+    test_speed(fa_cudnn,"fa_cudnn",1<<17,6,1);
+    test_speed(fa_cudnn,"fa_cudnn",1<<17,36,1);
 
 	test_speed(fa_cudnn,"fa_cudnn",16384,6,10);
     test_speed(fa_cudnn,"fa_cudnn",16384,36,10);

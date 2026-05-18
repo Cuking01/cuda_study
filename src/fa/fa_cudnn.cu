@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include "type.h"
 
 namespace fe = cudnn_frontend;
 
@@ -30,7 +31,7 @@ struct SdpaPlan {
     std::shared_ptr<fe::graph::Tensor_attributes> V;
     std::shared_ptr<fe::graph::Tensor_attributes> O;
 
-    explicit SdpaPlan(int n, int heads) {
+    explicit SdpaPlan(u2 n, u2 heads) {
         CHECK_CUDNN(cudnnCreate(&handle));
 
         constexpr int64_t d = 128;
@@ -124,9 +125,9 @@ struct SdpaPlan {
 };
 
 
-void fa_cudnn(cudaStream_t stream,const half* q,const half* k,const half* v,half* o,int n,int heads)
+void fa_cudnn(cudaStream_t stream,const half* q,const half* k,const half* v,half* o,u2 n,u2 heads)
 {
-    using PlanKey = std::pair<int, int>;
+    using PlanKey = std::pair<u2, u2>;
 
     struct PlanKeyHash {
         std::size_t operator()(const PlanKey& key) const {
