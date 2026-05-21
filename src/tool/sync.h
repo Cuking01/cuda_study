@@ -6,7 +6,8 @@
 
 inline void gpu_sync()
 {
-    cudaDeviceSynchronize();
     process_error();
+    cudaError_t err=cudaDeviceSynchronize();
+    if(err!=cudaSuccess)throw std::runtime_error(cudaGetErrorString(err));
 }
 

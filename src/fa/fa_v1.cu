@@ -14,13 +14,16 @@
 #include "type.h"
 #include "debug.h"
 
+__device__ __forceinline__ static void pack(float* dst, const float* src)
+{
+    *(half2*)dst=__floats2half2_rn(src[0],src[1]);
+};
 
-
-__global__ static void fa_v1_impl(
+__global__ __launch_bounds__(384,1) static void fa_v1_impl(
     const half* q,
     const __grid_constant__ CUtensorMap tensor_map_K,
     const __grid_constant__ CUtensorMap tensor_map_V,
-    const half* o,
+    half* o,
     u2 n,
     u2 heads
 ){
@@ -32,6 +35,7 @@ __global__ static void fa_v1_impl(
     extern __shared__ __align__(1024) half smem[];
     half* const ks=smem;
     half* const vs=smem+128*128;
+    half(*const ostmp)[8][256]=(half(*)[8][256])smem;
     __shared__ __align__(128) uint64_t full_k,full_v;
 
     if(tid==0)
@@ -39,7 +43,6 @@ __global__ static void fa_v1_impl(
         mbarrier_init(full_k);
         mbarrier_init(full_v);
     }
-
     __syncthreads();
 
     auto producer=[&]()
@@ -64,11 +67,11 @@ __global__ static void fa_v1_impl(
 
         auto WCK=[&]()
         {
-            barrier_sync(0,256+32);
+            barrier_sync(0,384);
         };
         auto WCV=[&]()
         {
-            barrier_sync(1,256+32);
+            barrier_sync(1,384);
         };
 
         TMA_LSK(0,head_id);
@@ -87,9 +90,17 @@ __global__ static void fa_v1_impl(
     {
         const u2 wid=tid/32;
         const u2 lid=tid%32;
+        const half* const LR_ks=ks+(lid/16*8+lid%8)*64+(lid/8%2^lid%8)*8;
+        const half* const LR_vs=vs+(lid/8%2*8+lid%8)*64+(lid/16^lid%8)*8;
+        half* const ST_o=o+128ull*head_id*n+128ull*128*task_id+128ull*16*wid+128ull*(lid/8%2*8+lid%8)+lid/16*8;
 
         u2 phase_k=0,phase_v=0;
+        float oreg[16][4]={0};
+        float sr[16][4]={0};
+
         half2 qr[8][4];
+        half2 kr[2][4];
+        half2 (*const vr)[4]=kr;
 
         auto TMA_WLK=[&]()
         {
@@ -101,8 +112,13 @@ __global__ static void fa_v1_impl(
             mbarrier_wait(full_v,phase_v);
             phase_v^=1;
         };
+        auto TMA_WL=[&](int kv)
+        {
+            if(kv==0)TMA_WLK();
+            else TMA_WLV();
+        };
 
-        auto load_qr=[&]()
+        auto LOAD_QR=[&]()
         {
             const half*q_tlocal=q+(task_id*128u+wid*16u+lid/4)*128u+lid%4*2;
             for(int i=0;i<8;i++)
@@ -130,20 +146,92 @@ __global__ static void fa_v1_impl(
             printf("\n");
         };
 
-        load_qr();
-
-        for(u2 i=0;i<=task_id;i++)
+        auto LR_next=[&](int kv,int i,int j)
         {
-            TMA_WLK();
-            barrier_arrive(0,256+32);
-            TMA_WLV();
-            barrier_arrive(1,256+32);
+
+            if(j==7)j=0,i++;
+            if(i==8)i=0,kv^=1,TMA_WL(kv);
+            if(kv==0)
+                ldmatrix_x4(kr[j&1],LR_ks+((j/4*128+i*16)*64+(j%4*2)*8));
+            else
+                ldmatrix_x4_trans(vr[j&1],LR_vs+((i/4*128+j*16)*64+(i%4*2)*8));
+        };
+
+        auto CS=[&]<bool tail=false>()
+        {
+            #pragma unroll 8
+            for(int i=0;i<8;i++)
+            {
+                #pragma unroll 4
+                for(int j=0;j<4;j++)
+                    sr[i*2+0][j]=sr[i*2+1][j]=0.0;
+                #pragma unroll 8
+                for(int j=0;j<8;j++)
+                {
+                    LR_next(0,i,j);
+                    mma(sr[i*2+0],qr[j],kr[j&1]);
+                    mma(sr[i*2+1],qr[j],kr[j&1]+2);
+                }
+                pack(sr[i]+0,sr[i*2+0]+0); pack(sr[i]+1,sr[i*2+0]+2);
+                pack(sr[i]+2,sr[i*2+1]+0); pack(sr[i]+3,sr[i*2+1]+2);
+
+            }
+            barrier_arrive(0,384);
+        };
+
+        auto CO=[&]<bool tail=false>()
+        {
+            #pragma unroll 8
+            for(int i=0;i<8;i++)
+            {
+                #pragma unroll 8
+                for(int j=0;j<8;j++)
+                {
+                    LR_next(1,i,j);
+                    mma(oreg[i*2+0],sr[j],vr[j&1]);
+                    mma(oreg[i*2+1],sr[j],vr[j&1]+2);
+                }
+            }
+            barrier_arrive(1,384);
+        };
+
+        auto WRITE_BACK=[&]()
+        {
+            #pragma unroll 8
+            for(int i=0;i<8;i++)
+            {
+                pack(oreg[i]+0,oreg[i*2+0]+0); pack(oreg[i]+1,oreg[i*2+0]+2);
+                pack(oreg[i]+2,oreg[i*2+1]+0); pack(oreg[i]+3,oreg[i*2+1]+2);
+
+                stmatrix_x4(ostmp[wid][i]+lid*8,oreg[i]);
+                *(float4*)(ST_o+i*16)=*(float4*)(ostmp[wid][i]+lid*8);
+            }
+        };
+
+        LOAD_QR();
+
+        LR_next(1,7,7);
+        for(u2 i=0;i<task_id;i++)
+        {
+            CS();
+            CO();
         }
         
+        WRITE_BACK();
     };
 
-    if(tid<256)consumer();
-    else producer();
+    if(tid<256)
+    {
+        barrier_sync(2,384);
+        set_reg_inc<240>();
+        consumer();
+    }
+    else
+    {
+        set_reg_dec<24>();
+        barrier_arrive(2,384);
+        producer();
+    }
 
 #endif
 }
@@ -162,8 +250,8 @@ void fa_v1(cudaStream_t stream, const half* q, const half* k, const half* v, hal
     FA_TMA_Desc desc_V((half*)v,n,heads);
 
 	dim3 grid(heads,n/128);
-	dim3 block(288);
+	dim3 block(384);
 	fa_v1_impl<<<grid,block,smem_size,stream>>>(q,desc_K.get(),desc_V.get(),o,n,heads);
 
-	process_error();
+	gpu_sync();
 }

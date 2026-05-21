@@ -10,6 +10,7 @@ __device__ static void print_8x8(const half* a)
             printf("%f ",__half2float(a[1]));
             if(i%4==3)printf("\n");
         }
+        __syncwarp();
     }
     if(threadIdx.x%32==0)printf("\n");
 }

@@ -1,6 +1,10 @@
 #pragma once
 #include "type.h"
 
+__device__ __forceinline__ static void fence_async()
+{
+    asm volatile("fence.proxy.async.shared::cta;\n" ::: "memory");
+}
 __device__ __forceinline__ static void copy_16B(void*dst,const void* src)
 {
 	uint32_t smem_int_ptr=__cvta_generic_to_shared(dst);
@@ -161,8 +165,15 @@ __device__ __forceinline__ void mbarrier_arrive(uint64_t&mbar)
 }
 
 template<u2 n>
-__device__ __forceinline__ void set_reg()
+__device__ __forceinline__ void set_reg_dec()
 {
     asm volatile("setmaxnreg.dec.sync.aligned.u32 %0;" :: "n"(n) : "memory");
 }
+
+template<u2 n>
+__device__ __forceinline__ void set_reg_inc()
+{
+    asm volatile("setmaxnreg.inc.sync.aligned.u32 %0;" :: "n"(n) : "memory");
+}
+
 #endif

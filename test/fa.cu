@@ -12,7 +12,7 @@
 #include "tool.h"
 #include "fa.h"
 
-#define FIXED_DATA
+//#define FIXED_DATA
 
 constexpr int HEAD_DIM = 128;
 
@@ -241,21 +241,30 @@ int main()
 	test_correctness(fa_v1,"fa_v1",512,4);
 	test_correctness(fa_cudnn,"fa_cudnn",512,4);
 
-    test_speed(fa_cudnn,"fa_cudnn",16384,6,1);
-    test_speed(fa_cudnn,"fa_cudnn",16384,36,1);
-    test_speed(fa_cudnn,"fa_cudnn",32768,6,1);
-    test_speed(fa_cudnn,"fa_cudnn",32768,36,1);
-    test_speed(fa_cudnn,"fa_cudnn",65536,6,1);
-    test_speed(fa_cudnn,"fa_cudnn",65536,36,1);
-    test_speed(fa_cudnn,"fa_cudnn",1<<17,6,1);
-    test_speed(fa_cudnn,"fa_cudnn",1<<17,36,1);
+    // test_speed(fa_cudnn,"fa_cudnn",16384,6,1);
+    // test_speed(fa_cudnn,"fa_cudnn",16384,36,1);
+    // test_speed(fa_cudnn,"fa_cudnn",32768,6,1);
+    // test_speed(fa_cudnn,"fa_cudnn",32768,36,1);
+    // test_speed(fa_cudnn,"fa_cudnn",65536,6,1);
+    // test_speed(fa_cudnn,"fa_cudnn",65536,36,1);
+    // test_speed(fa_cudnn,"fa_cudnn",1<<17,6,1);
+    // test_speed(fa_cudnn,"fa_cudnn",1<<17,36,1);
 
-	test_speed(fa_cudnn,"fa_cudnn",16384,6,10);
-    test_speed(fa_cudnn,"fa_cudnn",16384,36,10);
-    test_speed(fa_cudnn,"fa_cudnn",32768,6,10);
-    test_speed(fa_cudnn,"fa_cudnn",32768,36,10);
-    test_speed(fa_cudnn,"fa_cudnn",65536,6,10);
-    test_speed(fa_cudnn,"fa_cudnn",65536,36,10);
-    test_speed(fa_cudnn,"fa_cudnn",1<<17,6,10);
-    test_speed(fa_cudnn,"fa_cudnn",1<<17,36,10);
+	// test_speed(fa_cudnn,"fa_cudnn",16384,6,10);
+    // test_speed(fa_cudnn,"fa_cudnn",16384,36,10);
+    // test_speed(fa_cudnn,"fa_cudnn",32768,6,10);
+    // test_speed(fa_cudnn,"fa_cudnn",32768,36,10);
+    // test_speed(fa_cudnn,"fa_cudnn",65536,6,10);
+    // test_speed(fa_cudnn,"fa_cudnn",65536,36,10);
+    // test_speed(fa_cudnn,"fa_cudnn",1<<17,6,10);
+    // test_speed(fa_cudnn,"fa_cudnn",1<<17,36,10);
+
+	test_speed(fa_v1,"fa_v1",16384,6,10);
+    test_speed(fa_v1,"fa_v1",16384,36,10);
+    test_speed(fa_v1,"fa_v1",32768,6,10);
+    test_speed(fa_v1,"fa_v1",32768,36,10);
+    test_speed(fa_v1,"fa_v1",65536,6,10);
+    test_speed(fa_v1,"fa_v1",65536,36,10);
+    test_speed(fa_v1,"fa_v1",1<<17,6,10);
+    test_speed(fa_v1,"fa_v1",1<<17,36,10);
 }
