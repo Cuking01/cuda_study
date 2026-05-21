@@ -148,7 +148,6 @@ __global__ __launch_bounds__(384,1) static void fa_v1_impl(
 
         auto LR_next=[&](int kv,int i,int j)
         {
-
             if(j==7)j=0,i++;
             if(i==8)i=0,kv^=1,TMA_WL(kv);
             if(kv==0)
@@ -157,8 +156,13 @@ __global__ __launch_bounds__(384,1) static void fa_v1_impl(
                 ldmatrix_x4_trans(vr[j&1],LR_vs+((i/4*128+j*16)*64+(i%4*2)*8));
         };
 
-        auto CS=[&]<bool tail=false>()
+        auto CP=[&]<bool tail=false>()
         {
+            constexpr float scale=0.127517430824598685;  //sqrt(1/128)/ln(2)
+            float mx[2]={-1e30,-1e30};
+            float lmx[8][2];
+            float sum[2]={0};
+
             #pragma unroll 8
             for(int i=0;i<8;i++)
             {
@@ -172,6 +176,31 @@ __global__ __launch_bounds__(384,1) static void fa_v1_impl(
                     mma(sr[i*2+0],qr[j],kr[j&1]);
                     mma(sr[i*2+1],qr[j],kr[j&1]+2);
                 }
+
+                #pragma unroll 4
+                for(int j=0;j<4;j++)
+                {
+                    sr[i*2+0][j]*=scale;
+                    sr[i*2+1][j]*=scale;
+                }
+
+                lmx[i][0]=fmaxf(sr[i*2+0][0],sr[i*2+0][1]);
+                lmx[i][1]=fmaxf(sr[i*2+0][2],sr[i*2+0][3]);
+                lmx[i][0]=fmaxf(lmx[i][0],sr[i*2+1][0]);
+                lmx[i][1]=fmaxf(lmx[i][1],sr[i*2+1][2]);
+                lmx[i][0]=fmaxf(lmx[i][0],sr[i*2+1][1]);
+                lmx[i][1]=fmaxf(lmx[i][1],sr[i*2+1][3]);
+                
+                #pragma unroll 2
+                for(int j=0;j<2;j++)
+                {
+                    lmx[i][j]=fmaxf(lmx[i][j],__shfl_xor_sync(0xffffffff,lmx[i][j],1));
+                    lmx[i][j]=fmaxf(lmx[i][j],__shfl_xor_sync(0xffffffff,lmx[i][j],2));
+                    mx[j]=fmaxf(mx[j],lmx[i][j]);
+                }
+                
+                
+
                 pack(sr[i]+0,sr[i*2+0]+0); pack(sr[i]+1,sr[i*2+0]+2);
                 pack(sr[i]+2,sr[i*2+1]+0); pack(sr[i]+3,sr[i*2+1]+2);
 
@@ -213,7 +242,7 @@ __global__ __launch_bounds__(384,1) static void fa_v1_impl(
         LR_next(1,7,7);
         for(u2 i=0;i<task_id;i++)
         {
-            CS();
+            CP();
             CO();
         }
         
