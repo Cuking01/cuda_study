@@ -117,9 +117,17 @@ target_compile_options(test_pcie_bandwidth PRIVATE -O2)
 add_executable(test_ex2_fp16x2_throughoutput test/ex2_fp16x2.cu)
 target_compile_options(test_ex2_fp16x2_throughoutput PRIVATE -O2)
 
+##### experiment -- ex2_fp32 throughoutput #####
+add_executable(test_ex2_fp32_throughoutput test/ex2_fp32.cu)
+target_compile_options(test_ex2_fp32_throughoutput PRIVATE -O2)
+
 ##### experiment -- mma m16n8k16 latency #####
 add_executable(test_mma_m16n8k16_latency test/mma_m16n8k16_latency.cu)
 target_compile_options(test_mma_m16n8k16_latency PRIVATE -O2 --keep -src-in-ptx -lineinfo)
+
+##### experiment -- mma m16n8k16 latency IPL=2 #####
+add_executable(test_mma_m16n8k16_latency_ipl2 test/mma_m16n8k16_latency_ipl2.cu)
+target_compile_options(test_mma_m16n8k16_latency_ipl2 PRIVATE -O2 --keep -src-in-ptx -lineinfo)
 
 set_target_properties(test_cp_async PROPERTIES
     CXX_STANDARD 20
