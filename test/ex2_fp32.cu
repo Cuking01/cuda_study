@@ -192,6 +192,7 @@ int main() {
     run_thread_cases<LaneMode::All, 32>();
 
     run_mask_cases<LaneMode::ModEqZero>();
+    run_mask_case<LaneMode::DivEqZero, 1>();
     run_mask_cases<LaneMode::DivEqZero>();
     return 0;
 }
