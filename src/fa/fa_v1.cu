@@ -123,7 +123,7 @@ __global__ __launch_bounds__(384,1) static void fa_v1_impl(
 
         auto LOAD_QR=[&]()
         {
-            const half*q_tlocal=q+(task_id*128u+wid*16u+lid/4)*128u+lid%4*2;
+            const half*q_tlocal=q+((u3)head_id*n+task_id*128ull+wid*16ull+lid/4)*128u+lid%4*2;
             for(int i=0;i<8;i++)
             {
                 qr[i][0]=*(half2*)(q_tlocal+i*16u);
@@ -239,14 +239,14 @@ __global__ __launch_bounds__(384,1) static void fa_v1_impl(
                 for(int j=0;j<4;j++)
                     scale[j/2][j%2]=__shfl_sync(0xffffffff,tmp,j,4);
 
-                #pragma unroll 2
-                for(int j=0;j<2;j++)
+                #pragma unroll 4
+                for(int j=0;j<4;j++)
                 {
                     #pragma unroll 4
                     for(int k=0;k<4;k++)
                     {
-                        sr[i+j][k]*=scale[j][k/2];
-                        sum[k/2]+=sr[i+j][k];
+                        sr[i*2+j][k]*=scale[j/2][k/2];
+                        sum[k/2]+=sr[i*2+j][k];
                     }
                 }
             }
@@ -255,9 +255,10 @@ __global__ __launch_bounds__(384,1) static void fa_v1_impl(
             for(int j=0;j<2;j++)
             {
                 butterfly_sum_x4(sum[j]);
-                sum[j]+=gsum[j];
+                float old_sum=gsum[j]*ex2(dm[j]);
+                sum[j]+=old_sum;
                 p_scale[j]=1.0/sum[j];
-                o_lst_scale[j]=gsum[j]*ex2(dm[j])*p_scale[j];
+                o_lst_scale[j]=old_sum*p_scale[j];
                 gsum[j]=sum[j];
             }
             
