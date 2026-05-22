@@ -13,11 +13,8 @@
 #include "ptx.h"
 #include "type.h"
 #include "debug.h"
-
-__device__ __forceinline__ static void pack(float* dst, const float* src)
-{
-    *(half2*)dst=__floats2half2_rn(src[0],src[1]);
-};
+#include "helper.h"
+#include "barrier.h"
 
 __global__ __launch_bounds__(384,1) static void fa_v1_impl(
     const half* q,
@@ -37,6 +34,9 @@ __global__ __launch_bounds__(384,1) static void fa_v1_impl(
     half* const vs=smem+128*128;
     half(*const ostmp)[8][256]=(half(*)[8][256])smem;
     __shared__ __align__(128) uint64_t full_k,full_v;
+
+    barrier<0,384> bar_k;
+    barrier<1,384> bar_v;
 
     if(tid==0)
     {
@@ -67,11 +67,11 @@ __global__ __launch_bounds__(384,1) static void fa_v1_impl(
 
         auto WCK=[&]()
         {
-            barrier_sync(0,384);
+            bar_k.sync();
         };
         auto WCV=[&]()
         {
-            barrier_sync(1,384);
+            bar_v.sync();
         };
 
         TMA_LSK(0,head_id);
@@ -101,6 +101,9 @@ __global__ __launch_bounds__(384,1) static void fa_v1_impl(
         half2 qr[8][4];
         half2 kr[2][4];
         half2 (*const vr)[4]=kr;
+
+        float gmx[2]={-1e30,-1e30};
+        float gsum[2]={0.0,0.0};
 
         auto TMA_WLK=[&]()
         {
@@ -156,10 +159,10 @@ __global__ __launch_bounds__(384,1) static void fa_v1_impl(
                 ldmatrix_x4_trans(vr[j&1],LR_vs+((i/4*128+j*16)*64+(i%4*2)*8));
         };
 
-        auto CP=[&]<bool tail=false>()
+        auto CP=[&](bool tail=false)
         {
             constexpr float scale=0.127517430824598685;  //sqrt(1/128)/ln(2)
-            float mx[2]={-1e30,-1e30};
+            float mx[2]={gmx[0],gmx[1]};
             float lmx[8][2];
             float sum[2]={0};
 
@@ -182,33 +185,85 @@ __global__ __launch_bounds__(384,1) static void fa_v1_impl(
                 {
                     sr[i*2+0][j]*=scale;
                     sr[i*2+1][j]*=scale;
+                    if(tail)
+                    {
+                        if(i*16+j%2+lid%4*2>wid*16+j/2*8+lid/4)sr[i*2+0][j]=-1e30;
+                        if(i*16+8+j%2+lid%4*2>wid*16+j/2*8+lid/4)sr[i*2+1][j]=-1e30;
+                    }
                 }
 
-                lmx[i][0]=fmaxf(sr[i*2+0][0],sr[i*2+0][1]);
-                lmx[i][1]=fmaxf(sr[i*2+0][2],sr[i*2+0][3]);
-                lmx[i][0]=fmaxf(lmx[i][0],sr[i*2+1][0]);
-                lmx[i][1]=fmaxf(lmx[i][1],sr[i*2+1][2]);
-                lmx[i][0]=fmaxf(lmx[i][0],sr[i*2+1][1]);
-                lmx[i][1]=fmaxf(lmx[i][1],sr[i*2+1][3]);
-                
                 #pragma unroll 2
                 for(int j=0;j<2;j++)
                 {
-                    lmx[i][j]=fmaxf(lmx[i][j],__shfl_xor_sync(0xffffffff,lmx[i][j],1));
-                    lmx[i][j]=fmaxf(lmx[i][j],__shfl_xor_sync(0xffffffff,lmx[i][j],2));
-                    mx[j]=fmaxf(mx[j],lmx[i][j]);
+                    mx[j]=fmaxf(mx[j],max_x4(sr[i*2+0]+j*2,sr[i*2+1]+j*2));
+                    butterfly_max_x4(mx[j]);
+                    lmx[i][j]=mx[j];
                 }
                 
-                
-
-                pack(sr[i]+0,sr[i*2+0]+0); pack(sr[i]+1,sr[i*2+0]+2);
-                pack(sr[i]+2,sr[i*2+1]+0); pack(sr[i]+3,sr[i*2+1]+2);
+                #pragma unroll 4
+                for(int j=0;j<4;j++)
+                {
+                    sr[i*2+0][j]=ex2(sr[i*2+0][j]-mx[j/2]);
+                    sr[i*2+1][j]=ex2(sr[i*2+1][j]-mx[j/2]);
+                }
 
             }
-            barrier_arrive(0,384);
+            bar_k.arrive();
+
+            float dm[2]={gmx[0]-mx[0],gmx[1]-mx[1]};
+            float o_lst_scale[2];
+            float p_scale[2];
+            gmx[0]=mx[0];
+            gmx[1]=mx[1];
+
+            #pragma unroll 4
+            for(int i=0;i<8;i+=2)
+            {
+                float tmp=blend_x4(lid,lmx[i][0]-mx[0],lmx[i][1]-mx[1],lmx[i+1][0]-mx[0],lmx[i+1][1]-mx[1]);
+                tmp=ex2(tmp);
+                float scale[2][2];
+
+                #pragma unroll 4
+                for(int j=0;j<4;j++)
+                    scale[j/2][j%2]=__shfl_sync(0xffffffff,tmp,j,4);
+
+                #pragma unroll 2
+                for(int j=0;j<2;j++)
+                {
+                    #pragma unroll 4
+                    for(int k=0;k<4;k++)
+                    {
+                        sr[i+j][k]*=scale[j][k/2];
+                        sum[k/2]+=sr[i+j][k];
+                    }
+                }
+            }
+
+            #pragma unroll 2
+            for(int j=0;j<2;j++)
+            {
+                butterfly_sum_x4(sum[j]);
+                sum[j]+=gsum[j];
+                p_scale[j]=1.0/sum[j];
+                o_lst_scale[j]=gsum[j]*ex2(dm[j])*p_scale[j];
+                gsum[j]=sum[j];
+            }
+            
+            #pragma unroll 16
+            for(int i=0;i<16;i++)
+            {
+                #pragma unroll 4
+                for(int j=0;j<4;j++)
+                {
+                    oreg[i][j]*=o_lst_scale[j/2];
+                    sr[i][j]*=p_scale[j/2];
+                }
+
+                pack(sr[i/2]+0,sr[i]+0); pack(sr[i/2]+1,sr[i]+2);
+            }
         };
 
-        auto CO=[&]<bool tail=false>()
+        auto CO=[&](bool tail=false)
         {
             #pragma unroll 8
             for(int i=0;i<8;i++)
@@ -216,12 +271,12 @@ __global__ __launch_bounds__(384,1) static void fa_v1_impl(
                 #pragma unroll 8
                 for(int j=0;j<8;j++)
                 {
-                    LR_next(1,i,j);
+                    if(!(tail&&i==7&&j==7))LR_next(1,i,j);
                     mma(oreg[i*2+0],sr[j],vr[j&1]);
                     mma(oreg[i*2+1],sr[j],vr[j&1]+2);
                 }
             }
-            barrier_arrive(1,384);
+            bar_v.arrive();
         };
 
         auto WRITE_BACK=[&]()
@@ -245,6 +300,9 @@ __global__ __launch_bounds__(384,1) static void fa_v1_impl(
             CP();
             CO();
         }
+
+        CP(true);
+        CO(true);
         
         WRITE_BACK();
     };

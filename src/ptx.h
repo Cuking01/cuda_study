@@ -176,4 +176,11 @@ __device__ __forceinline__ void set_reg_inc()
     asm volatile("setmaxnreg.inc.sync.aligned.u32 %0;" :: "n"(n) : "memory");
 }
 
+__device__ __forceinline__ float ex2(float src)
+{
+    float dst;
+    asm volatile("ex2.approx.f32 %0, %1;" : "+f"(dst) : "f"(src) : "memory");
+    return dst;
+}
+
 #endif
