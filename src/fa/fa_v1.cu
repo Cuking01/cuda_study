@@ -90,8 +90,8 @@ __global__ __launch_bounds__(384,1) static void fa_v1_impl(
     {
         const u2 wid=tid/32;
         const u2 lid=tid%32;
-        const half* const LR_ks=ks+(lid/16*8+lid%8)*64+(lid/8%2^lid%8)*8;
-        const half* const LR_vs=vs+(lid/8%2*8+lid%8)*64+(lid/16^lid%8)*8;
+        const half* const LR_ks=ks+(lid/16*8+lid%8)*64;
+        const half* const LR_vs=vs+(lid/8%2*8+lid%8)*64;
         half* const ST_o=o+128ull*head_id*n+128ull*128*task_id+128ull*16*wid+128ull*(lid/8%2*8+lid%8)+lid/16*8;
 
         u2 phase_k=0,phase_v=0;
@@ -135,14 +135,16 @@ __global__ __launch_bounds__(384,1) static void fa_v1_impl(
 
         auto print=[&](half* p)
         {
-            if(!(tid==0&&task_id==3&&head_id==0))return;
+            if(!(tid==0&&task_id==0&&head_id==0))return;
 
-            for(int i=0;i<16;i++)
+            for(int i=0;i<128;i++)
             {
+                printf("%d:\n",i);
                 for(int j=0;j<128;j++)
                 {
                     printf("%f ",__half2float(p[i*128+j]));
                     if(j%8==7)printf("\n");
+                    if(j%64==63)printf("******\n");
                 }
                 printf("\n");
             }
@@ -151,12 +153,13 @@ __global__ __launch_bounds__(384,1) static void fa_v1_impl(
 
         auto LR_next=[&](int kv,int i,int j)
         {
-            if(j==7)j=0,i++;
+            j++;
+            if(j==8)j=0,i++;
             if(i==8)i=0,kv^=1,TMA_WL(kv);
             if(kv==0)
-                ldmatrix_x4(kr[j&1],LR_ks+((j/4*128+i*16)*64+(j%4*2)*8));
+                ldmatrix_x4(kr[j&1],LR_ks+((j/4*128+i*16)*64+(j%4*2+lid/8%2^lid%8)*8));
             else
-                ldmatrix_x4_trans(vr[j&1],LR_vs+((i/4*128+j*16)*64+(i%4*2)*8));
+                ldmatrix_x4_trans(vr[j&1],LR_vs+((i/4*128+j*16)*64+(i%4*2+lid/16^lid%8)*8));
         };
 
         auto CP=[&](bool tail=false)
@@ -179,6 +182,14 @@ __global__ __launch_bounds__(384,1) static void fa_v1_impl(
                     mma(sr[i*2+0],qr[j],kr[j&1]);
                     mma(sr[i*2+1],qr[j],kr[j&1]+2);
                 }
+
+                // if(tail&&task_id==0&&head_id==0&&wid==1&&i<=1)
+                // {
+                //     if(lid==0)printf("i=%d\n",i);
+                //     __syncwarp();
+                //     print_8x8(sr[i*2+0]);
+                //     print_8x8(sr[i*2+1]);
+                // }
 
                 #pragma unroll 4
                 for(int j=0;j<4;j++)
@@ -208,6 +219,7 @@ __global__ __launch_bounds__(384,1) static void fa_v1_impl(
                 }
 
             }
+
             bar_k.arrive();
 
             float dm[2]={gmx[0]-mx[0],gmx[1]-mx[1]};
@@ -304,7 +316,7 @@ __global__ __launch_bounds__(384,1) static void fa_v1_impl(
 
         CP(true);
         CO(true);
-        
+        barrier_sync(3,256);
         WRITE_BACK();
     };
 

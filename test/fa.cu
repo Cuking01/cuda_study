@@ -26,7 +26,7 @@ void random_init(std::vector<__half>& data, int seed)
 		x = __float2half(dist(rng));
 #else
 	for (int i = 0; i < data.size(); i++)
-		data[i] = __float2half(i * 1.0f);
+		data[i] = __float2half((i%128+2*(i/128%128))*0.01f);
 #endif
 }
 
@@ -58,7 +58,23 @@ void fa_ref(const __half* q, const __half* k, const __half* v, __half* o, int n,
 					sum += qv * kv;
 				}
 
-				score[j] = sum * scale;
+				score[j] = sum;
+				
+			}
+
+			if(h==0&&i==21)
+			{
+				for(int j=0;j<=i;j++)
+					printf("%f ",score[j]);
+				printf("\n");
+				for(int j=0;j<=i;j++)
+					printf("%f ",score[j]/log(2));
+				printf("\n");
+			}
+
+			for(int j=0;j<=i;j++)
+			{
+				score[j] *= scale;
 				max_score = std::max(max_score, score[j]);
 			}
 
