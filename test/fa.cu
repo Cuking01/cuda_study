@@ -259,12 +259,12 @@ int main()
     // test_speed(fa_cudnn,"fa_cudnn",1<<17,6,10);
     // test_speed(fa_cudnn,"fa_cudnn",1<<17,36,10);
 
-	test_speed(fa_v1,"fa_v1",16384,6,10);
-    test_speed(fa_v1,"fa_v1",16384,36,10);
-    test_speed(fa_v1,"fa_v1",32768,6,10);
-    test_speed(fa_v1,"fa_v1",32768,36,10);
-    test_speed(fa_v1,"fa_v1",65536,6,10);
-    test_speed(fa_v1,"fa_v1",65536,36,10);
-    test_speed(fa_v1,"fa_v1",1<<17,6,10);
-    test_speed(fa_v1,"fa_v1",1<<17,36,10);
+	// test_speed(fa_v1,"fa_v1",16384,6,10);
+    // test_speed(fa_v1,"fa_v1",16384,36,10);
+    // test_speed(fa_v1,"fa_v1",32768,6,10);
+    // test_speed(fa_v1,"fa_v1",32768,36,10);
+    // test_speed(fa_v1,"fa_v1",65536,6,10);
+    // test_speed(fa_v1,"fa_v1",65536,36,10);
+    // test_speed(fa_v1,"fa_v1",1<<17,6,10);
+    // test_speed(fa_v1,"fa_v1",1<<17,36,10);
 }

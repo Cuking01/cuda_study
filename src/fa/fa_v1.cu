@@ -259,7 +259,8 @@ __global__ __launch_bounds__(384,1) static void fa_v1_impl(
                     sr[i][j]*=p_scale[j/2];
                 }
 
-                pack(sr[i/2]+0,sr[i]+0); pack(sr[i/2]+1,sr[i]+2);
+                pack(sr[i/2]+(i%2)*2+0,sr[i]+0);
+                pack(sr[i/2]+(i%2)*2+1,sr[i]+2);
             }
         };
 
