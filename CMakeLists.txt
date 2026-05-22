@@ -121,6 +121,10 @@ target_compile_options(test_ex2_fp16x2_throughoutput PRIVATE -O2)
 add_executable(test_ex2_fp32_throughoutput test/ex2_fp32.cu)
 target_compile_options(test_ex2_fp32_throughoutput PRIVATE -O2)
 
+##### experiment -- warp shuffle #####
+add_executable(test_shfl test/shfl.cu)
+target_compile_options(test_shfl PRIVATE -O2 --keep -src-in-ptx -lineinfo)
+
 ##### experiment -- mma m16n8k16 latency #####
 add_executable(test_mma_m16n8k16_latency test/mma_m16n8k16_latency.cu)
 target_compile_options(test_mma_m16n8k16_latency PRIVATE -O2 --keep -src-in-ptx -lineinfo)
