@@ -1116,6 +1116,158 @@ __global__ __launch_bounds__(384,1) static void v6_impl(const __grid_constant__ 
 }
 };
 
+namespace hgemm_v7_impl
+{
+
+__global__ static void v7_impl(const __grid_constant__ CUtensorMap tensor_map_A,const __grid_constant__ CUtensorMap tensor_map_B,half*c,u2 M,u2 K)
+{
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 1200
+    const u2 tid=threadIdx.x;
+    const u2 bx=blockIdx.x;
+    const u2 by=blockIdx.y;
+
+    constexpr u2 as_size=128*32;
+    constexpr u2 bs_size=32*128;
+
+    __shared__ __align__(1024) half smem[128*128];
+
+    half (*const as)[as_size]=(half(*)[as_size])smem;
+    half (*const bs)[bs_size]=(half(*)[bs_size])(smem+as_size*2);
+    half (*const cstmp)[4][2][256]=(half(*)[4][2][256])smem;
+
+    __shared__ __align__(128) uint64_t full[2];
+
+    if(tid==0)
+    {
+        mbarrier_init(full[0]);
+        mbarrier_init(full[1]);
+    }
+
+    __syncthreads();
+
+    auto producer=[&]()
+    {
+        auto TMA_LS=[&](int stage,u2 offset)
+        {
+            if(tid==256)
+            {
+                mbarrier_arrive_expect_tx(full[stage], as_size*2+bs_size*2);
+                tma_load(full[stage],as[stage],tensor_map_A,offset,by*128);
+                tma_load(full[stage],bs[stage],tensor_map_B,0,offset,bx*2);
+            }
+        };
+
+        auto WC=[&](int stage)
+        {
+            barrier_sync(stage,256+32);
+        };
+        TMA_LS(0,0);
+        TMA_LS(1,32);
+        for(int i=64;i<M;i+=64)
+        {
+            WC(0);
+            TMA_LS(0,i);
+            WC(1);
+            TMA_LS(1,i+32);
+        }
+    };
+
+    auto consumer=[&]()
+    {
+        const u2 wid=tid/32;
+        const u2 lid=tid%32;
+        half ar[4][8];
+        half br[4][4];
+        float cr[4][4][4]={0};
+        u2 phase[2]={0,0};
+        bool stage0=true;
+
+        const half* LR_as_cur[2];
+        LR_as_cur[0]=as[0] +wid/4*64*32 +lid/8%2*8*32 +lid%8*32 +((lid/16+0)^lid%8/2)*8;
+        LR_as_cur[1]=as[0] +wid/4*64*32 +lid/8%2*8*32 +lid%8*32 +((lid/16+2)^lid%8/2)*8;
+
+        const half* LR_bs_cur[2];
+        LR_bs_cur[0]=bs[0] +wid%4/2*32*64 +lid/8%2*8*64 +lid%8*64 +((lid/16+0+wid%2*4)^lid%8)*8;
+        LR_bs_cur[1]=bs[0] +wid%4/2*32*64 +lid/8%2*8*64 +lid%8*64 +((lid/16+2+wid%2*4)^lid%8)*8;
+
+        auto TMA_WL=[&](int stage)
+        {
+            mbarrier_wait(full[stage],phase[stage]);
+            phase[stage]^=1;
+        };
+
+        auto C=[&](int stage)
+        {
+            auto LR=[&](int j)
+            {
+                #pragma unroll 4
+                for(int k=0;k<4;k++)
+                    ldmatrix_x4(ar[k],LR_as_cur[j]+(k*16*32+stage*as_size));
+                #pragma unroll 2
+                for(int k=0;k<2;k++)
+                    ldmatrix_x4_trans(br[k*2],LR_bs_cur[k]+(j*16*64+stage*bs_size));
+            };
+
+            auto CR=[&]()
+            {
+                #pragma unroll 4
+                for(int j=0;j<4;j++)
+                {
+                    #pragma unroll 4
+                    for(int k=0;k<4;k++)
+                        mma(cr[j][k],ar[j],br[k]);
+                }
+            };
+
+            LR(0); CR(); LR(1); CR();
+
+            barrier_arrive(stage,256+32);
+        };
+
+        for(int i=0;i<M;i+=64)
+        {
+            TMA_WL(0);
+            C(0);
+            TMA_WL(1);
+            C(1);
+        }
+        barrier_sync(2,256);
+        half* const STG_c=c +by*128u*K +bx*128u +wid/4*64u*K +wid%4*32u +(lid/8%2*8u +lid%8)*K +lid/16*8;
+
+        #pragma unroll 4
+        for(int i=0;i<4;i++)
+        {
+            half2 tmp[2][4];
+            #pragma unroll 2
+            for(int j=0;j<2;j++)
+            {
+                tmp[j][0]=__floats2half2_rn(cr[i][j*2][0],cr[i][j*2][1]);
+                tmp[j][1]=__floats2half2_rn(cr[i][j*2][2],cr[i][j*2][3]);
+                tmp[j][2]=__floats2half2_rn(cr[i][j*2+1][0],cr[i][j*2+1][1]);
+                tmp[j][3]=__floats2half2_rn(cr[i][j*2+1][2],cr[i][j*2+1][3]);
+
+                stmatrix_x4(cstmp[wid][i][j]+lid*8,tmp[j]);
+            }
+        }
+
+        #pragma unroll 4
+        for(int i=0;i<4;i++)
+        {
+            half* const STG_c_row=STG_c+i*16u*K;
+            half* const STG_c_row2=STG_c_row+8u*K;
+            #pragma unroll 2
+            for(int j=0;j<2;j++)
+                *(half8*)(STG_c_row+j*16)=*(half8*)(cstmp[wid][i][j]+lid*8);
+        }
+    };
+
+    if(tid>=256)producer();
+    else consumer();
+#endif
+}
+};
+
+
 void hgemm_v1(cudaStream_t stream,const half* a, const half* b, half* c, u2 n, u2 m, u2 k)
 {
     assert_throw(m%128==0&&n%128==0&&k%128==0,"m,n,k must be divisible by 128");
