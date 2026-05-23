@@ -16,7 +16,7 @@
 #include "helper.h"
 #include "barrier.h"
 
-__global__ __launch_bounds__(384,1) static void fa_v1_impl(
+__global__ __launch_bounds__(384,1) static void fa_v4_impl(
     const half* q,
     const __grid_constant__ CUtensorMap tensor_map_K,
     const __grid_constant__ CUtensorMap tensor_map_V,
@@ -24,8 +24,8 @@ __global__ __launch_bounds__(384,1) static void fa_v1_impl(
     u2 n
 ){
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 1200
-    const u2 head_id=blockIdx.x;
-    const u2 task_id=gridDim.y-blockIdx.y-1;
+    const u2 head_id=blockIdx.y;
+    const u2 task_id=gridDim.x-blockIdx.x-1;
     const u2 tid=threadIdx.x;
 
     extern __shared__ __align__(1024) half smem[];
@@ -132,6 +132,24 @@ __global__ __launch_bounds__(384,1) static void fa_v1_impl(
             }
         };
 
+        auto print=[&](half* p)
+        {
+            if(!(tid==0&&task_id==0&&head_id==0))return;
+
+            for(int i=0;i<128;i++)
+            {
+                printf("%d:\n",i);
+                for(int j=0;j<128;j++)
+                {
+                    printf("%f ",__half2float(p[i*128+j]));
+                    if(j%8==7)printf("\n");
+                    if(j%64==63)printf("******\n");
+                }
+                printf("\n");
+            }
+            printf("\n");
+        };
+
         auto LR_next=[&](int kv,int i,int j)
         {
             j++;
@@ -163,14 +181,6 @@ __global__ __launch_bounds__(384,1) static void fa_v1_impl(
                     mma(sr[i*2+0],qr[j],kr[j&1]);
                     mma(sr[i*2+1],qr[j],kr[j&1]+2);
                 }
-
-                // if(tail&&task_id==0&&head_id==0&&wid==1&&i<=1)
-                // {
-                //     if(lid==0)printf("i=%d\n",i);
-                //     __syncwarp();
-                //     print_8x8(sr[i*2+0]);
-                //     print_8x8(sr[i*2+1]);
-                // }
 
                 #pragma unroll 4
                 for(int j=0;j<4;j++)
@@ -205,28 +215,23 @@ __global__ __launch_bounds__(384,1) static void fa_v1_impl(
 
             float dm[2]={gmx[0]-mx[0],gmx[1]-mx[1]};
             float o_lst_scale[2];
-            float p_scale[2];
             gmx[0]=mx[0];
             gmx[1]=mx[1];
 
-            #pragma unroll 4
-            for(int i=0;i<8;i+=2)
+            #pragma unroll 8
+            for(int i=0;i<8;i++)
             {
-                float tmp=blend_x4(lid,lmx[i][0]-mx[0],lmx[i][1]-mx[1],lmx[i+1][0]-mx[0],lmx[i+1][1]-mx[1]);
-                tmp=ex2(tmp);
-                float scale[2][2];
+                float scale[2];
+                scale[0]=ex2(lmx[i][0]-mx[0]);
+                scale[1]=ex2(lmx[i][1]-mx[1]);
 
-                #pragma unroll 4
-                for(int j=0;j<4;j++)
-                    scale[j/2][j%2]=__shfl_sync(0xffffffff,tmp,j,4);
-
-                #pragma unroll 4
-                for(int j=0;j<4;j++)
+                #pragma unroll 2
+                for(int j=0;j<2;j++)
                 {
                     #pragma unroll 4
                     for(int k=0;k<4;k++)
                     {
-                        sr[i*2+j][k]*=scale[j/2][k/2];
+                        sr[i*2+j][k]*=scale[k/2];
                         sum[k/2]+=sr[i*2+j][k];
                     }
                 }
@@ -236,11 +241,8 @@ __global__ __launch_bounds__(384,1) static void fa_v1_impl(
             for(int j=0;j<2;j++)
             {
                 butterfly_sum_x4(sum[j]);
-                float old_sum=gsum[j]*ex2(dm[j]);
-                sum[j]+=old_sum;
-                p_scale[j]=1.0/sum[j];
-                o_lst_scale[j]=old_sum*p_scale[j];
-                gsum[j]=sum[j];
+                o_lst_scale[j]=ex2(dm[j]);
+                gsum[j]=sum[j]+gsum[j]*o_lst_scale[j];
             }
             
             #pragma unroll 16
@@ -248,11 +250,8 @@ __global__ __launch_bounds__(384,1) static void fa_v1_impl(
             {
                 #pragma unroll 4
                 for(int j=0;j<4;j++)
-                {
                     oreg[i][j]*=o_lst_scale[j/2];
-                    sr[i][j]*=p_scale[j/2];
-                }
-
+                
                 pack(sr[i/2]+(i%2)*2+0,sr[i]+0);
                 pack(sr[i/2]+(i%2)*2+1,sr[i]+2);
             }
@@ -276,6 +275,16 @@ __global__ __launch_bounds__(384,1) static void fa_v1_impl(
 
         auto WRITE_BACK=[&]()
         {
+            float o_scale[2]={1.0/gsum[0],1.0/gsum[1]};
+
+            #pragma unroll 16
+            for(int i=0;i<16;i++)
+            {
+                #pragma unroll 4
+                for(int j=0;j<4;j++)
+                    oreg[i][j]*=o_scale[j/2];
+            }
+
             #pragma unroll 8
             for(int i=0;i<8;i++)
             {
@@ -318,22 +327,22 @@ __global__ __launch_bounds__(384,1) static void fa_v1_impl(
 #endif
 }
 
-void fa_v1(cudaStream_t stream, const half* q, const half* k, const half* v, half* o, u2 n, u2 heads)
+void fa_v4(cudaStream_t stream, const half* q, const half* k, const half* v, half* o, u2 n, u2 heads)
 {
     assert_throw(n%128==0,"n must be divisible by 128");
 
 	const unsigned int smem_size=64*1024;
 	cudaFuncSetAttribute(
-    fa_v1_impl,
+    fa_v4_impl,
     cudaFuncAttributeMaxDynamicSharedMemorySize,
     smem_size);
 
     FA_TMA_Desc desc_K((half*)k,n,heads);
     FA_TMA_Desc desc_V((half*)v,n,heads);
 
-	dim3 grid(heads,n/128);
+	dim3 grid(n/128,heads);
 	dim3 block(384);
-	fa_v1_impl<<<grid,block,smem_size,stream>>>(q,desc_K.get(),desc_V.get(),o,n);
+	fa_v4_impl<<<grid,block,smem_size,stream>>>(q,desc_K.get(),desc_V.get(),o,n);
 
 	gpu_sync();
 }

@@ -6,3 +6,6 @@
 void hello_fa();
 void fa_cudnn(cudaStream_t stream, const half* q, const half* k, const half* v, half* o, u2 n, u2 heads);
 void fa_v1(cudaStream_t stream, const half* q, const half* k, const half* v, half* o, u2 n, u2 heads);
+void fa_v2(cudaStream_t stream, const half* q, const half* k, const half* v, half* o, u2 n, u2 heads);
+void fa_v3(cudaStream_t stream, const half* q, const half* k, const half* v, half* o, u2 n, u2 heads);
+void fa_v4(cudaStream_t stream, const half* q, const half* k, const half* v, half* o, u2 n, u2 heads);

@@ -186,7 +186,7 @@ void test_correctness(fa_func fa, std::string name, u2 n, u2 heads)
 void test_speed(fa_func fa, std::string name, u2 n, u2 heads, int times = 1)
 {
 	printf("test %s, n=%d, heads=%d, head_dim=%d, %d times\n", name.c_str(), n, heads, HEAD_DIM, times);
-
+	
 	const size_t size = (size_t)heads * n * HEAD_DIM;
 	std::vector<__half> q(size), k(size), v(size), o(size);
 
@@ -242,42 +242,93 @@ void test_speed(fa_func fa, std::string name, u2 n, u2 heads, int times = 1)
 	}
 }
 
+struct DataSet
+{
+	std::vector<u2> n;
+	std::vector<u2> heads;
+
+	void add(u2 n, u2 heads)
+	{
+		this->n.push_back(n);
+		this->heads.push_back(heads);
+	}
+};
+
+struct TestSet
+{
+	std::vector<fa_func> f;
+	std::vector<std::string> name;
+
+	void add_fun(fa_func fa, std::string name)
+	{
+		f.push_back(fa);
+		this->name.push_back(name);
+	}
+
+	void test_correctness(u2 n, u2 heads) const
+	{
+		for(int i=0;i<f.size();i++)
+			::test_correctness(f[i],name[i],n,heads);
+	}
+
+	void test_speed(u2 n, u2 heads, int times = 1) const
+	{
+		for(int i=0;i<f.size();i++)
+			::test_speed(f[i],name[i],n,heads,times);
+	}
+
+	void test_correctness(const DataSet& data_set) const
+	{
+		for(int i=0;i<data_set.n.size();i++)
+			test_correctness(data_set.n[i],data_set.heads[i]);
+	}
+	
+	void test_speed(const DataSet& data_set, int times = 1) const
+	{
+		for(int i=0;i<data_set.n.size();i++)
+			test_speed(data_set.n[i],data_set.heads[i],times);
+	}
+	
+};
+
+void cudnn_prewarm(const DataSet& data_set)
+{
+	puts("cudnn prewarm start\n");
+	
+	TestSet test_set;
+	test_set.add_fun(fa_cudnn,"fa_cudnn");
+	test_set.test_speed(data_set,1);
+
+	puts("cudnn prewarm end\n");
+}
+
 int main()
 {
-	test_correctness(fa_v1,"fa_v1",512,4);
-	test_correctness(fa_cudnn,"fa_cudnn",512,4);
+	hello_fa();
 
-    test_speed(fa_cudnn,"fa_cudnn",16384,6,1);
-    test_speed(fa_cudnn,"fa_cudnn",16384,36,1);
-    test_speed(fa_cudnn,"fa_cudnn",32768,6,1);
-    test_speed(fa_cudnn,"fa_cudnn",32768,36,1);
-    test_speed(fa_cudnn,"fa_cudnn",65536,6,1);
-    test_speed(fa_cudnn,"fa_cudnn",65536,36,1);
-    test_speed(fa_cudnn,"fa_cudnn",1<<17,6,1);
-    test_speed(fa_cudnn,"fa_cudnn",1<<17,36,1);
+	DataSet data_set;
+	for(int i=14;i<=17;i++)
+	{
+		data_set.add(1<<i,6);
+		data_set.add(1<<i,36);
+	}
 
-	test_speed(fa_v1,"fa_v1",16384,6,10);
-	test_speed(fa_cudnn,"fa_cudnn",16384,6,10);
+	TestSet test_set_correctness;
+	test_set_correctness.add_fun(fa_v1,"fa_v1");
+	test_set_correctness.add_fun(fa_v2,"fa_v2");
+	test_set_correctness.add_fun(fa_v3,"fa_v3");
+	test_set_correctness.add_fun(fa_v4,"fa_v4");
+	test_set_correctness.add_fun(fa_cudnn,"fa_cudnn");
 
-	test_speed(fa_v1,"fa_v1",16384,36,10);
-    test_speed(fa_cudnn,"fa_cudnn",16384,36,10);
+	test_set_correctness.test_correctness(512,4);
+	test_set_correctness.test_correctness(1024,1);
 
-	test_speed(fa_v1,"fa_v1",32768,6,10);
-    test_speed(fa_cudnn,"fa_cudnn",32768,6,10);
+	TestSet test_set_speed;
+	test_set_speed.add_fun(fa_v3,"fa_v3");
+	test_set_speed.add_fun(fa_v4,"fa_v4");
+	test_set_speed.add_fun(fa_cudnn,"fa_cudnn");
 
-	test_speed(fa_v1,"fa_v1",32768,36,10);
-    test_speed(fa_cudnn,"fa_cudnn",32768,36,10);
-
-	test_speed(fa_v1,"fa_v1",65536,6,10);
-    test_speed(fa_cudnn,"fa_cudnn",65536,6,10);
-
-	test_speed(fa_v1,"fa_v1",65536,36,10);
-    test_speed(fa_cudnn,"fa_cudnn",65536,36,10);
-
-	test_speed(fa_v1,"fa_v1",1<<17,6,10);
-    test_speed(fa_cudnn,"fa_cudnn",1<<17,6,10);
-
-	test_speed(fa_v1,"fa_v1",1<<17,36,10);
-    test_speed(fa_cudnn,"fa_cudnn",1<<17,36,10);
+	cudnn_prewarm(data_set);
+	test_set_speed.test_speed(data_set,10);
 
 }

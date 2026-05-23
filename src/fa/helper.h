@@ -25,10 +25,28 @@ __device__ __forceinline__ static void butterfly_max_x4(float&mx)
     mx=fmaxf(mx,__shfl_xor_sync(0xffffffff,mx,2));
 }
 
+__device__ __forceinline__ static void non_butterfly_max_x4(float&mx)
+{
+    float t1=__shfl_xor_sync(0xffffffff,mx,1);
+    float t2=__shfl_xor_sync(0xffffffff,mx,2);
+    float t3=__shfl_xor_sync(0xffffffff,mx,3);
+    t1=fmaxf(mx,t1);
+    t2=fmaxf(t2,t3);
+    mx=fmaxf(t1,t2);
+}
+
 __device__ __forceinline__ static void butterfly_sum_x4(float&sum)
 {
     sum+=__shfl_xor_sync(0xffffffff,sum,1);
     sum+=__shfl_xor_sync(0xffffffff,sum,2);
+}
+
+__device__ __forceinline__ static void non_butterfly_sum_x4(float&sum)
+{
+    float t1=__shfl_xor_sync(0xffffffff,sum,1);
+    float t2=__shfl_xor_sync(0xffffffff,sum,2);
+    float t3=__shfl_xor_sync(0xffffffff,sum,3);
+    sum=(sum+t1)+(t2+t3);
 }
 
 __device__ __forceinline__ static float blend(bool mask,float a,float b)
