@@ -66,6 +66,10 @@ add_executable(test_fa test/fa.cu)
 target_compile_options(test_fa PRIVATE -O2)
 target_link_libraries(test_fa cu_operator cudnn)
 
+add_executable(test_fa_correctness test/fa_correctness.cu)
+target_compile_options(test_fa_correctness PRIVATE -O2)
+target_link_libraries(test_fa_correctness cu_operator cudnn)
+
 add_executable(test_hgemm test/hgemm.cu)
 target_compile_options(test_hgemm PRIVATE -O2)
 target_link_libraries(test_hgemm cu_operator cublas)
