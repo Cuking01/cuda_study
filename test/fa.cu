@@ -318,14 +318,15 @@ int main()
 	test_set_correctness.add_fun(fa_v2,"fa_v2");
 	test_set_correctness.add_fun(fa_v3,"fa_v3");
 	test_set_correctness.add_fun(fa_v4,"fa_v4");
+	test_set_correctness.add_fun(fa_v5,"fa_v5");
 	test_set_correctness.add_fun(fa_cudnn,"fa_cudnn");
 
 	test_set_correctness.test_correctness(512,4);
 	test_set_correctness.test_correctness(1024,1);
 
 	TestSet test_set_speed;
-	test_set_speed.add_fun(fa_v3,"fa_v3");
 	test_set_speed.add_fun(fa_v4,"fa_v4");
+	test_set_speed.add_fun(fa_v5,"fa_v5");
 	test_set_speed.add_fun(fa_cudnn,"fa_cudnn");
 
 	cudnn_prewarm(data_set);
