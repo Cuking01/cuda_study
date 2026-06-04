@@ -218,12 +218,15 @@ __global__ __launch_bounds__(384,1) static void fa_v5_impl(
             gmx[0]=mx[0];
             gmx[1]=mx[1];
 
-            #pragma unroll 7
-            for(int i=0;i<7;i++)
+            #pragma unroll 8
+            for(int i=0;i<8;i++)
             {
                 float scale[2];
-                scale[0]=ex2(lmx[i][0]-mx[0]);
-                scale[1]=ex2(lmx[i][1]-mx[1]);
+                if(i<7)
+                {
+                    scale[0]=ex2(lmx[i][0]-mx[0]);
+                    scale[1]=ex2(lmx[i][1]-mx[1]);
+                }
 
                 #pragma unroll 2
                 for(int j=0;j<2;j++)
@@ -231,18 +234,10 @@ __global__ __launch_bounds__(384,1) static void fa_v5_impl(
                     #pragma unroll 4
                     for(int k=0;k<4;k++)
                     {
-                        sr[i*2+j][k]*=scale[k/2];
+                        if(i<7)sr[i*2+j][k]*=scale[k/2];
                         sum[k/2]+=sr[i*2+j][k];
                     }
                 }
-            }
-
-            #pragma unroll 2
-            for(int j=0;j<2;j++)
-            {
-                #pragma unroll 4
-                for(int k=0;k<4;k++)
-                    sum[k/2]+=sr[14+j][k];
             }
 
             #pragma unroll 2
