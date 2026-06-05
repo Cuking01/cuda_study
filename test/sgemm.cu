@@ -164,6 +164,7 @@ int main()
 	test_correctness(sgemm_v7, "sgemm_v7",128,256,512);
 	test_correctness(sgemm_v8, "sgemm_v8",128,256,512);
 	test_correctness(sgemm_v9, "sgemm_v9",128,256,512);
+	test_correctness(sgemm_v10, "sgemm_v10",128,256,512);
 
 	test_correctness(sgemm_zhihu, "sgemm_zhihu",128,256,512);
 

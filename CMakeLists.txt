@@ -32,6 +32,7 @@ file(GLOB FA_SRC CONFIGURE_DEPENDS "src/fa/*")
 
 add_library(cu_operator STATIC
 	src/sgemm.cu
+    src/faster_sgemm.cu
     src/hgemm.cu
     ${FA_SRC}
 )

@@ -101,7 +101,7 @@ __device__ __forceinline__ void mbarrier_arrive_expect_tx(uint64_t&mbar,u2 sz)
     asm volatile("mbarrier.arrive.expect_tx.shared::cta.b64 _, [%0], %1;" :: "r"(mbar_s), "r"(sz) : "memory");
 }
 
-__device__ __forceinline__ void tma_load(uint64_t&mbar,half*dst,const CUtensorMap&desc,u2 x,u2 y)
+__device__ __forceinline__ void tma_load(uint64_t&mbar,void*dst,const CUtensorMap&desc,u2 x,u2 y)
 {
     u2 mbar_s = __cvta_generic_to_shared(&mbar);
     u2 dst_s=__cvta_generic_to_shared(dst);
