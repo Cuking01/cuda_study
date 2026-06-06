@@ -160,11 +160,11 @@ int main()
 	test_correctness(sgemm_v4,"sgemm_v4",128,256,512);
 	test_correctness(sgemm_v5,"sgemm_v5",128,256,512);
 	test_correctness(sgemm_v6, "sgemm_v6",128,256,512);
-	//test_correctness(sgemm_v7, "sgemm_v7",128,128,128);
 	test_correctness(sgemm_v7, "sgemm_v7",128,256,512);
 	test_correctness(sgemm_v8, "sgemm_v8",128,256,512);
 	test_correctness(sgemm_v9, "sgemm_v9",128,256,512);
 	test_correctness(sgemm_v10, "sgemm_v10",128,256,512);
+	test_correctness(sgemm_v11, "sgemm_v11",128,256,512);
 
 	test_correctness(sgemm_zhihu, "sgemm_zhihu",128,256,512);
 
@@ -184,11 +184,19 @@ int main()
 	test_speed(sgemm_v7,"sgemm_v7",4096,4096,4096,10);
 	test_speed(sgemm_v8, "sgemm_v8",4096,4096,4096,10);
 	test_speed(sgemm_v9, "sgemm_v9",4096,4096,4096,10);
+	test_speed(sgemm_v10, "sgemm_v10",4096,4096,4096,10);
+	test_speed(sgemm_v11, "sgemm_v11",4096,4096,4096,10);
 	test_speed(sgemm_cublas,"sgemm_cublas",4096,4096,4096,10);
 	test_speed(sgemm_cublas,"sgemm_cublas",4096,4096,4096,10);
 	test_speed(sgemm_zhihu, "sgemm_zhihu",4096,4096,4096,10);
 
 	test_speed(sgemm_v7,"sgemm_v7",8192,8192,8192,10);
+	test_speed(sgemm_v8, "sgemm_v8",8192,8192,8192,10);
+	test_speed(sgemm_v9, "sgemm_v9",8192,8192,8192,10);
+	test_speed(sgemm_v10, "sgemm_v10",8192,8192,8192,10);
+	test_speed(sgemm_v11, "sgemm_v11",8192,8192,8192,10);
+
+	test_speed(sgemm_zhihu,"sgemm_zhihu",8192,8192,8192,10);
 	test_speed(sgemm_cublas,"sgemm_cublas",8192,8192,8192,10);
 	
 	// test_speed(sgemm_v4,"sgemm_v4",16384,16384,16384,1);
